@@ -60,6 +60,11 @@ react {
 def enableProguardInReleaseBuilds = false
 
 /**
+ * Apply react-native-vector-icons fonts
+ */
+apply from: file("../../node_modules/react-native-vector-icons/fonts.gradle")
+
+/**
  * The preferred build flavor of JavaScriptCore (JSC)
  *
  * For example, to use the international variant, you can use:
@@ -73,7 +78,7 @@ def enableProguardInReleaseBuilds = false
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
 android {
-    ndkVersion rootProject.ext.ndkVersion
+    // ndkVersion rootProject.ext.ndkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 

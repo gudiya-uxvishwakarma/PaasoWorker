@@ -1,97 +1,123 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# PaasoWork - Worker App
 
-# Getting Started
+Android-first worker management application with comprehensive onboarding, profile management, and monetization features.
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+## Features
 
-## Step 1: Start Metro
+### 🔐 Authentication
+- OTP-based login system
+- Secure phone verification
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+### 👥 Worker Types
+- **Individual Worker** - ₹99 onboarding fee
+- **Crew Leader** - ₹299 onboarding fee (with team management)
+- **Contractor** - ₹499 onboarding fee
+- **Service Provider** - ₹999 onboarding fee (shop/agency)
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+### 📋 Onboarding & Profile
+- Multi-step onboarding process
+- Worker type selection
+- Profile details (name, business name, skills, service areas)
+- Availability toggle (Online/Busy/Offline)
+- Working days & hours scheduling
+- Crew management for Crew Leaders
 
-```sh
-# Using npm
-npm start
+### 💰 Monetization Features
 
-# OR using Yarn
-yarn start
+#### 1. Onboarding Fees
+- One-time configurable fees by worker type
+- Secure payment integration ready
+
+#### 2. Trust & Verification Badges
+- KYC-lite verification (Aadhaar/DL upload)
+- Optional GST verification for Service Providers
+- Verified badge after admin approval
+- Premium trust badges:
+  - **Trusted Pro** - ₹499/year
+  - **Business Verified** - ₹999/year
+
+#### 3. Featured Listing
+- **Weekly Plan** - ₹299 (7 days)
+- **Monthly Plan** - ₹999 (30 days, save 25%)
+- Priority placement in search results
+- Highlighted worker card UI
+- 3-5x visibility boost
+
+#### 4. Subscription Plans
+- **Free** - Basic listing
+- **Starter** - ₹499/month (Higher visibility, lead insights)
+- **Pro** - ₹999/month (Premium visibility, analytics, 5 featured slots)
+- **Business** - ₹1999/month (Maximum visibility, unlimited featured slots, API access)
+
+### 📊 Worker Insights
+- Profile view count
+- Contact unlock tracking
+- Performance indicators
+- Weekly statistics
+
+### 🔒 Privacy & Support
+- Hide phone number toggle
+- Availability scheduling
+- In-app help system
+- Complaint resolution
+
+## Project Structure
+
+```
+src/
+├── navigation/
+│   └── AppNavigator.jsx          # Main navigation controller
+├── screens/
+│   ├── auth/
+│   │   └── LoginScreen.jsx       # OTP login
+│   ├── onboarding/
+│   │   └── OnboardingScreen.jsx  # Multi-step onboarding
+│   ├── home/
+│   │   └── HomeScreen.jsx        # Dashboard with insights
+│   ├── profile/
+│   │   └── ProfileScreen.jsx     # Profile management
+│   └── monetization/
+│       └── SubscriptionScreen.jsx # Subscription plans
+├── components/
+│   └── ScheduleModal.jsx         # Working schedule modal
+└── constants/
+    └── monetization.js           # Pricing & plans config
 ```
 
-## Step 2: Build and run your app
+## Installation
 
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
+```bash
+# Install dependencies
+npm install
 
-### Android
-
-```sh
-# Using npm
+# Run on Android
 npm run android
 
-# OR using Yarn
-yarn android
+# Start Metro bundler
+npm start
 ```
 
-### iOS
+## Configuration
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
+All monetization settings are configurable in `src/constants/monetization.js`:
+- Onboarding fees by worker type
+- Verification badge pricing
+- Featured listing plans
+- Subscription tiers
 
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
+## Tech Stack
 
-```sh
-bundle install
-```
+- React Native 0.83.1
+- React 19.2.0
+- React Native Safe Area Context
+- No external navigation library (custom implementation)
 
-Then, and every time you update your native dependencies, run:
+## Next Steps
 
-```sh
-bundle exec pod install
-```
-
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
-
-```sh
-# Using npm
-npm run ios
-
-# OR using Yarn
-yarn ios
-```
-
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
-
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
-
-## Step 3: Modify your app
-
-Now that you have successfully run the app, let's make changes!
-
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
-
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
-
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
-
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+- [ ] Integrate payment gateway
+- [ ] Add KYC document upload
+- [ ] Implement admin approval system
+- [ ] Add analytics dashboard
+- [ ] Crew member management UI
+- [ ] Push notifications
+- [ ] Chat/messaging system
