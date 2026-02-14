@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, TouchableOpacity, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import LoginScreen from '../screens/auth/LoginScreen';
 import WorkerTypeSelectionScreen from '../screens/onboarding/WorkerTypeSelectionScreen';
@@ -21,13 +21,57 @@ const AppNavigator = () => {
   const [navigationHistory, setNavigationHistory] = useState(['login']);
   const [activeTab, setActiveTab] = useState('dashboard');
 
+  /**
+   * Check if user needs to complete onboarding steps
+   * Returns: { required: boolean, screen: string, reason: string }
+   */
+  const checkOnboardingStatus = (userData) => {
+    if (!userData) {
+      return { required: true, screen: 'login', reason: 'No user data' };
+    }
+
+    // Step 1: Check if KYC/Verification is pending
+    if (!userData.verified || !userData.kycVerified) {
+      return { 
+        required: true, 
+        screen: 'verification', 
+        reason: 'Verification pending' 
+      };
+    }
+
+    // Step 2: Check if worker type is selected
+    if (!userData.workerType) {
+      return { 
+        required: true, 
+        screen: 'workerTypeSelection', 
+        reason: 'Worker type not selected' 
+      };
+    }
+
+    // Step 3: Check if profile details are complete
+    const hasBasicInfo = userData.name && userData.mobile;
+    const hasCategory = userData.category && userData.category.length > 0;
+    const hasLocation = userData.city && userData.serviceArea;
+    
+    if (!hasBasicInfo || !hasCategory || !hasLocation) {
+      return { 
+        required: true, 
+        screen: 'profileDetails', 
+        reason: 'Profile incomplete' 
+      };
+    }
+
+    // All onboarding steps complete
+    return { required: false, screen: 'home', reason: 'Onboarding complete' };
+  };
+
   const navigate = (screen, data = null) => {
     setCurrentScreen(screen);
     if (data) setUserData(data);
     setNavigationHistory(prev => [...prev, screen]);
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     // Reset all state
     setUserData(null);
     setSelectedWorkerType(null);
@@ -66,13 +110,23 @@ const AppNavigator = () => {
       case 'login':
         return (
           <LoginScreen
-            onLogin={(phoneNumber) => {
-              // Existing user - go directly to home
-              setUserData({ phoneNumber, name: 'Worker', isExisting: true });
-              navigate('home');
+            onLogin={(phoneNumber, workerData) => {
+              // User logged in successfully
+              setUserData(workerData);
+              
+              // Check onboarding status and navigate accordingly
+              const onboardingStatus = checkOnboardingStatus(workerData);
+              
+              if (onboardingStatus.required) {
+                console.log('📋 Onboarding required:', onboardingStatus.reason);
+                navigate(onboardingStatus.screen);
+              } else {
+                console.log('✅ Onboarding complete, going to home');
+                navigate('home');
+              }
             }}
             onNewUser={(phoneNumber) => {
-              // New user - go to registration
+              // New user - start registration flow
               setUserData({ phoneNumber });
               navigate('workerTypeSelection');
             }}
@@ -80,20 +134,40 @@ const AppNavigator = () => {
         );
       case 'workerTypeSelection':
         return <WorkerTypeSelectionScreen 
+          userData={userData}
           onComplete={(type, language) => {
             setSelectedWorkerType(type);
             setSelectedLanguage(language);
+            
+            // Update user data with worker type
+            const updatedData = { 
+              ...userData, 
+              workerType: type,
+              languages: [language]
+            };
+            setUserData(updatedData);
+            
             navigate('profileDetails');
           }}
           onBack={goBack}
         />;
       case 'profileDetails':
         return <ProfileDetailsScreen 
-          workerType={selectedWorkerType}
+          workerType={selectedWorkerType || userData?.workerType}
           selectedLanguage={selectedLanguage}
-          onComplete={(data) => {
-            setUserData(data);
-            navigate('home', data);
+          userData={userData}
+          onComplete={async (data) => {
+            // Profile details complete
+            const updatedData = { ...userData, ...data };
+            setUserData(updatedData);
+            
+            // Check if all onboarding is complete
+            const onboardingStatus = checkOnboardingStatus(updatedData);
+            if (onboardingStatus.required) {
+              navigate(onboardingStatus.screen);
+            } else {
+              navigate('home', updatedData);
+            }
           }}
           onBack={goBack}
         />;
@@ -169,14 +243,29 @@ const AppNavigator = () => {
       case 'subscription':
         return <SubscriptionScreen onNavigate={navigate} onBack={goBack} />;
       case 'verification':
-        return <VerificationScreen onBack={goBack} userData={userData} />;
+        return <VerificationScreen 
+          onBack={goBack} 
+          userData={userData}
+          onComplete={(updatedData) => {
+            // Verification complete, update user data
+            setUserData(updatedData);
+            
+            // Check next onboarding step
+            const onboardingStatus = checkOnboardingStatus(updatedData);
+            if (onboardingStatus.required) {
+              navigate(onboardingStatus.screen);
+            } else {
+              navigate('home');
+            }
+          }}
+        />;
       case 'teamManagement':
         return <TeamManagementScreen onBack={goBack} userData={userData} />;
       default:
         return (
           <LoginScreen
-            onLogin={(phoneNumber) => {
-              setUserData({ phoneNumber, name: 'Worker', isExisting: true });
+            onLogin={(phoneNumber, workerData) => {
+              setUserData(workerData);
               navigate('home');
             }}
             onNewUser={(phoneNumber) => {
@@ -194,6 +283,16 @@ const AppNavigator = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  loadingContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: COLORS.textSecondary,
   },
   bottomNav: {
     flexDirection: 'row',

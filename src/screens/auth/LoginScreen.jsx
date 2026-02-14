@@ -14,6 +14,7 @@ import {
 import Icon from 'react-native-vector-icons/Ionicons';
 import COLORS from '../../constants/colors';
 import SuccessModal from '../../components/SuccessModal';
+import * as api from '../../services/api';
 
 const LoginScreen = ({ onLogin, onNewUser }) => {
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -112,12 +113,10 @@ const LoginScreen = ({ onLogin, onNewUser }) => {
     setLoading(true);
     
     try {
-      // Simulate OTP send (Demo mode - no Firebase)
-      setTimeout(() => {
-        setLoading(false);
+      const response = await api.sendOTP(phoneNumber);
+      
+      if (response.success) {
         setResendTimer(30);
-        
-        // Show professional OTP sent modal
         setShowOtpSentModal(true);
         
         // Auto-navigate to OTP screen after 800ms
@@ -125,11 +124,14 @@ const LoginScreen = ({ onLogin, onNewUser }) => {
           setShowOtpSentModal(false);
           setOtpSent(true);
         }, 800);
-      }, 1500);
+      } else {
+        Alert.alert('Error', response.message || 'Failed to send OTP');
+      }
     } catch (error) {
-      setLoading(false);
       console.error('OTP Send Error:', error);
       Alert.alert('Error', 'Failed to send OTP. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -142,31 +144,49 @@ const LoginScreen = ({ onLogin, onNewUser }) => {
     setLoading(true);
     
     try {
-      // Simulate OTP verification (Demo mode - no Firebase)
-      setTimeout(async () => {
-        // Check if user is already registered in database
-        const isRegistered = await checkUserRegistration(phoneNumber);
-        
-        setLoading(false);
-        
-        if (isRegistered) {
-          // Existing user - go directly to home
-          setIsNewUser(false);
-          setShowWelcomeModal(true);
+      console.log('🔍 Starting OTP verification...');
+      console.log('📱 Mobile:', phoneNumber);
+      console.log('🔢 OTP:', otp);
+      console.log('🔗 Calling backend API...');
+      
+      // Verify OTP and check if user is registered
+      const response = await api.verifyOTP(phoneNumber, otp);
+      
+      console.log('📥 Backend response:', JSON.stringify(response, null, 2));
+      
+      if (response.success) {
+        if (response.isRegistered && response.worker) {
+          // Existing user - check if approved
+          console.log('👤 Existing user found');
+          console.log('📊 Status:', response.worker.status);
           
-          // Auto close and navigate after 600ms
-          setTimeout(() => {
-            setShowWelcomeModal(false);
+          if (response.worker.status === 'Approved') {
+            console.log('✅ User approved, navigating to dashboard...');
+            // User is approved, navigate to dashboard
+            setIsNewUser(false);
+            setShowWelcomeModal(true);
+            
             setTimeout(() => {
-              onLogin(phoneNumber);
-            }, 200);
-          }, 600);
+              setShowWelcomeModal(false);
+              setTimeout(() => {
+                onLogin(phoneNumber, response.worker);
+              }, 200);
+            }, 600);
+          } else {
+            // Worker exists but not approved
+            console.log('⏳ User not approved:', response.worker.status);
+            Alert.alert(
+              'Account Pending',
+              `Your account is ${response.worker.status}. Please wait for admin approval.`,
+              [{ text: 'OK' }]
+            );
+          }
         } else {
-          // New user - go to registration flow
+          // New user - navigate to registration
+          console.log('🆕 New user, navigating to registration');
           setIsNewUser(true);
           setShowWelcomeModal(true);
           
-          // Auto close and navigate after 600ms
           setTimeout(() => {
             setShowWelcomeModal(false);
             setTimeout(() => {
@@ -174,11 +194,16 @@ const LoginScreen = ({ onLogin, onNewUser }) => {
             }, 200);
           }, 600);
         }
-      }, 1500);
+      } else {
+        console.log('❌ OTP verification failed');
+        Alert.alert('Verification Failed', 'Invalid OTP. Please try again.');
+      }
     } catch (error) {
+      console.error('💥 OTP Verification Error:', error);
+      console.error('Error details:', error.message);
+      Alert.alert('Verification Failed', error.message || 'Invalid OTP. Please try again.');
+    } finally {
       setLoading(false);
-      console.error('OTP Verification Error:', error);
-      Alert.alert('Verification Failed', 'Invalid OTP. Please try again.');
     }
   };
 
@@ -207,14 +232,14 @@ const LoginScreen = ({ onLogin, onNewUser }) => {
     
     try {
       setResendTimer(30);
+      const response = await api.sendOTP(phoneNumber);
       
-      // Simulate OTP resend (Demo mode - no Firebase)
-      setShowOtpSentModal(true);
-      
-      // Auto-close modal after 800ms
-      setTimeout(() => {
-        setShowOtpSentModal(false);
-      }, 800);
+      if (response.success) {
+        setShowOtpSentModal(true);
+        setTimeout(() => {
+          setShowOtpSentModal(false);
+        }, 800);
+      }
     } catch (error) {
       console.error('OTP Resend Error:', error);
       Alert.alert('Error', 'Failed to resend OTP. Please try again.');
@@ -343,7 +368,6 @@ const LoginScreen = ({ onLogin, onNewUser }) => {
                 </>
               ) : (
                 <>
-                  
                   <Text style={styles.buttonText}>Send OTP</Text>
                 </>
               )}
@@ -595,6 +619,19 @@ const styles = StyleSheet.create({
   resendTimer: {
     color: COLORS.textLight,
     fontSize: 14,
+    fontWeight: '600',
+  },
+  switchLoginButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    padding: 12,
+    marginTop: 12,
+  },
+  switchLoginText: {
+    color: COLORS.accent,
+    fontSize: 15,
     fontWeight: '600',
   },
   footer: {

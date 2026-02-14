@@ -11,7 +11,7 @@ import {
 import Icon from 'react-native-vector-icons/Ionicons';
 import COLORS from '../../constants/colors';
 
-const VerificationScreen = ({ onBack, userData }) => {
+const VerificationScreen = ({ onBack, userData, onComplete }) => {
   const [documents, setDocuments] = useState({
     aadhaar: null,
     drivingLicense: null,
@@ -305,6 +305,28 @@ const VerificationScreen = ({ onBack, userData }) => {
               </View>
             ))}
           </View>
+        </View>
+
+        {/* Skip Button */}
+        <View style={styles.skipSection}>
+          <TouchableOpacity
+            style={styles.skipButton}
+            onPress={() => {
+              if (onComplete) {
+                // Mark as skipped and continue
+                onComplete({ ...userData, verificationSkipped: true });
+              } else if (onBack) {
+                onBack();
+              }
+            }}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.skipButtonText}>Skip for Now</Text>
+            <Icon name="arrow-forward" size={20} color={COLORS.textSecondary} />
+          </TouchableOpacity>
+          <Text style={styles.skipHint}>
+            You can complete verification later from your profile
+          </Text>
         </View>
 
         <View style={styles.bottomPadding} />
@@ -648,6 +670,35 @@ const styles = StyleSheet.create({
   },
   bottomPadding: {
     height: 40,
+  },
+  skipSection: {
+    marginTop: 24,
+    marginBottom: 16,
+    alignItems: 'center',
+  },
+  skipButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    borderRadius: 14,
+    backgroundColor: COLORS.surface,
+    borderWidth: 2,
+    borderColor: COLORS.border,
+  },
+  skipButtonText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.textSecondary,
+  },
+  skipHint: {
+    marginTop: 12,
+    fontSize: 13,
+    color: COLORS.textLight,
+    textAlign: 'center',
+    paddingHorizontal: 32,
   },
 });
 

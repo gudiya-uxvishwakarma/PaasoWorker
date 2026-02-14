@@ -8,11 +8,14 @@ import {
   StyleSheet,
   StatusBar,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import COLORS from '../../constants/colors';
+import * as api from '../../services/api';
 
 const ProfileDetailsScreen = ({ workerType, selectedLanguage = 'English', onComplete, onBack }) => {
+  const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -576,7 +579,7 @@ const ProfileDetailsScreen = ({ workerType, selectedLanguage = 'English', onComp
     // In real implementation, use react-native-image-picker
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     // Validation for Individual Worker
     if (workerType === 'individual') {
       if (!formData.name.trim()) {
@@ -627,7 +630,50 @@ const ProfileDetailsScreen = ({ workerType, selectedLanguage = 'English', onComp
       }
     }
 
-    onComplete({ ...formData, workerType });
+    // Register worker with backend
+    setLoading(true);
+    
+    try {
+      const workerData = {
+        name: formData.name,
+        email: formData.email,
+        mobile: formData.mobile,
+        password: formData.password,
+        languages: formData.selectedLanguages.length > 0 
+          ? formData.selectedLanguages 
+          : [selectedLanguage],
+        workerType: workerType,
+        category: formData.skills || formData.services,
+        serviceArea: formData.serviceAreas,
+        city: formData.serviceAreas.split(',')[0]?.trim() || '',
+        teamSize: formData.teamSize ? parseInt(formData.teamSize) : 1,
+        gstNumber: formData.gstNumber,
+        msmeNumber: formData.msmeNumber,
+        onboardingFee: formData.payment.transactionNumber,
+      };
+
+      const response = await api.registerWorker(workerData);
+      
+      if (response.success) {
+        Alert.alert(
+          'Registration Successful',
+          response.message || 'Your registration is pending admin approval. You will be notified once approved.',
+          [
+            {
+              text: 'OK',
+              onPress: () => onComplete({ ...formData, workerType, registered: true }),
+            },
+          ]
+        );
+      } else {
+        Alert.alert('Registration Failed', response.message || 'Please try again');
+      }
+    } catch (error) {
+      console.error('Registration Error:', error);
+      Alert.alert('Error', error.message || 'Failed to register. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const getAvailabilityColor = () => {
@@ -1391,10 +1437,18 @@ const ProfileDetailsScreen = ({ workerType, selectedLanguage = 'English', onComp
 
       <View style={styles.footer}>
         <TouchableOpacity
-          style={styles.submitButton}
+          style={[styles.submitButton, loading && styles.submitButtonDisabled]}
           onPress={handleSubmit}
+          disabled={loading}
         >
-          <Text style={styles.submitButtonText}>{t.completeProfile}</Text>
+          {loading ? (
+            <>
+              <ActivityIndicator size="small" color={COLORS.white} />
+              <Text style={[styles.submitButtonText, { marginLeft: 8 }]}>Registering...</Text>
+            </>
+          ) : (
+            <Text style={styles.submitButtonText}>{t.completeProfile}</Text>
+          )}
         </TouchableOpacity>
       </View>
     </View>
@@ -1616,7 +1670,13 @@ const styles = StyleSheet.create({
     padding: 18,
     borderRadius: 14,
     alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
     elevation: 2,
+  },
+  submitButtonDisabled: {
+    backgroundColor: COLORS.textLight,
+    elevation: 0,
   },
   submitButtonText: {
     color: COLORS.white,

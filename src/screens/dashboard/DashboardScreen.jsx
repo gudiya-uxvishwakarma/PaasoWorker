@@ -505,7 +505,7 @@ const styles = StyleSheet.create({
   },
   greeting: {
     color: 'rgba(255,255,255,0.95)',
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '600',
     marginBottom: 6,
   },
@@ -533,7 +533,7 @@ const styles = StyleSheet.create({
   },
   statusText: {
     color: COLORS.white,
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '700',
   },
   profileButton: {
