@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,18 +7,124 @@ import {
   StyleSheet,
   StatusBar,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import COLORS from '../../constants/colors';
+import * as api from '../../services/api';
+import { useLanguage } from '../../context/LanguageContext';
 
 const VerificationScreen = ({ onBack, userData, onComplete }) => {
+  // ✅ Use global language context for language persistence
+  const { selectedLanguage } = useLanguage();
+  
   const [documents, setDocuments] = useState({
-    aadhaar: null,
-    drivingLicense: null,
-    gst: null,
+    aadhaar: userData?.aadhaarDoc || null,
+    drivingLicense: userData?.drivingLicense || null,
+    gst: userData?.gstCertificate || null,
   });
+  const [loading, setLoading] = useState(true);
+  const [processing, setProcessing] = useState(false);
+  const [badges, setBadges] = useState([]);
+  const [transactions, setTransactions] = useState([]);
+  const [trustScore, setTrustScore] = useState(0);
 
-  const verificationBadges = [
+  // Log current language for debugging
+  useEffect(() => {
+    console.log('✅ Verification - Current Language:', selectedLanguage);
+  }, [selectedLanguage]);
+
+  useEffect(() => {
+    loadVerificationData();
+  }, []);
+
+  const loadVerificationData = async () => {
+    try {
+      setLoading(true);
+      
+      console.log('🛡️ Loading verification data...');
+      
+      // Calculate trust score based on user data
+      calculateTrustScore();
+      
+      // Load verification badges from backend
+      console.log('📥 Fetching verification badges...');
+      const badgesResponse = await api.getAddOns();
+      
+      if (badgesResponse.success && badgesResponse.addons) {
+        // Filter only verification-related add-ons
+        const verificationBadges = badgesResponse.addons.filter(addon => 
+          addon.id.includes('verified') || addon.id.includes('badge')
+        );
+        console.log('✅ Verification badges loaded:', verificationBadges.length);
+        setBadges(verificationBadges);
+      }
+      
+      // Load transaction history for verification purchases
+      console.log('📥 Fetching verification transactions...');
+      const transResponse = await api.getWorkerTransactions();
+      
+      if (transResponse.success && transResponse.transactions) {
+        // Filter verification-related transactions
+        const verificationTrans = transResponse.transactions.filter(trans =>
+          trans.type === 'Verification' || trans.type === 'Badge'
+        );
+        console.log('✅ Verification transactions loaded:', verificationTrans.length);
+        setTransactions(verificationTrans);
+      }
+      
+      console.log('✅ Verification data loaded successfully');
+    } catch (error) {
+      console.error('❌ Load Verification Data Error:', error);
+      console.error('Error details:', error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const calculateTrustScore = () => {
+    let score = 0;
+    
+    // Base score for registration
+    score += 10;
+    
+    // Phone verification
+    if (userData?.mobile) score += 10;
+    
+    // Email verification
+    if (userData?.email) score += 5;
+    
+    // Profile completion
+    if (userData?.name) score += 5;
+    if (userData?.profilePhoto) score += 10;
+    if (userData?.bio) score += 5;
+    if (userData?.category?.length > 0) score += 5;
+    if (userData?.serviceArea) score += 5;
+    
+    // Documents
+    if (userData?.aadhaarDoc) score += 15;
+    if (userData?.panCard) score += 10;
+    if (userData?.drivingLicense) score += 5;
+    if (userData?.gstCertificate) score += 10;
+    
+    // Verification status
+    if (userData?.verified) score += 20;
+    if (userData?.kycVerified) score += 15;
+    
+    // Badges
+    if (userData?.badges?.length > 0) {
+      score += userData.badges.length * 10;
+    }
+    
+    // Cap at 100
+    score = Math.min(score, 100);
+    
+    setTrustScore(score);
+    console.log('📊 Trust Score calculated:', score);
+  };
+
+  // Default verification badges (fallback if backend doesn't have them)
+  const defaultVerificationBadges = [
     {
       id: 'basic_verified',
       name: 'Verified Badge',
@@ -33,7 +139,7 @@ const VerificationScreen = ({ onBack, userData, onComplete }) => {
         'Higher search ranking',
         'Priority in listings',
       ],
-      status: 'available',
+      status: userData?.verified ? 'active' : 'available',
     },
     {
       id: 'trusted_pro',
@@ -49,7 +155,8 @@ const VerificationScreen = ({ onBack, userData, onComplete }) => {
         'Featured in "Trusted" section',
         'Dedicated support',
       ],
-      status: 'locked',
+      status: userData?.badges?.includes('Trusted Pro') ? 'active' : 
+              userData?.verified ? 'available' : 'locked',
     },
     {
       id: 'business_verified',
@@ -65,9 +172,12 @@ const VerificationScreen = ({ onBack, userData, onComplete }) => {
         'Bulk order priority',
         'Invoice generation',
       ],
-      status: userData?.workerType === 'service_provider' ? 'available' : 'not_applicable',
+      status: userData?.badges?.includes('Business Verified') ? 'active' :
+              userData?.workerType === 'Contractor' || userData?.workerType === 'Service Provider' ? 'available' : 'not_applicable',
     },
   ];
+
+  const verificationBadges = badges.length > 0 ? badges : defaultVerificationBadges;
 
   const documentTypes = [
     {
@@ -93,25 +203,190 @@ const VerificationScreen = ({ onBack, userData, onComplete }) => {
     },
   ];
 
-  const handleUploadDocument = (docType) => {
+  const handleUploadDocument = async (docType, docId) => {
     Alert.alert(
       'Upload Document',
       `Select ${docType} document to upload`,
       [
-        { text: 'Take Photo', onPress: () => console.log('Camera') },
-        { text: 'Choose from Gallery', onPress: () => console.log('Gallery') },
+        { 
+          text: 'Take Photo', 
+          onPress: async () => {
+            try {
+              // In production, use react-native-image-picker
+              console.log('📸 Opening camera for:', docType);
+              
+              // Simulate document upload
+              Alert.alert(
+                'Demo Mode',
+                'In production, camera will open here. For demo, simulating upload...',
+                [
+                  {
+                    text: 'OK',
+                    onPress: async () => {
+                      try {
+                        setProcessing(true);
+                        
+                        // Simulate upload to backend
+                        const response = await api.uploadDocument(docId, {
+                          uri: 'demo_document_uri',
+                          type: 'image/jpeg',
+                          name: `${docId}_${Date.now()}.jpg`
+                        });
+                        
+                        if (response.success) {
+                          setDocuments(prev => ({ ...prev, [docId]: true }));
+                          Alert.alert('Success', 'Document uploaded successfully!');
+                          loadVerificationData(); // Refresh data
+                        }
+                      } catch (error) {
+                        Alert.alert('Error', 'Failed to upload document. Please try again.');
+                      } finally {
+                        setProcessing(false);
+                      }
+                    }
+                  }
+                ]
+              );
+            } catch (error) {
+              console.error('Camera error:', error);
+            }
+          }
+        },
+        { 
+          text: 'Choose from Gallery', 
+          onPress: async () => {
+            try {
+              console.log('🖼️ Opening gallery for:', docType);
+              
+              // Simulate document upload
+              Alert.alert(
+                'Demo Mode',
+                'In production, gallery will open here. For demo, simulating upload...',
+                [
+                  {
+                    text: 'OK',
+                    onPress: async () => {
+                      try {
+                        setProcessing(true);
+                        
+                        const response = await api.uploadDocument(docId, {
+                          uri: 'demo_document_uri',
+                          type: 'image/jpeg',
+                          name: `${docId}_${Date.now()}.jpg`
+                        });
+                        
+                        if (response.success) {
+                          setDocuments(prev => ({ ...prev, [docId]: true }));
+                          Alert.alert('Success', 'Document uploaded successfully!');
+                          loadVerificationData();
+                        }
+                      } catch (error) {
+                        Alert.alert('Error', 'Failed to upload document. Please try again.');
+                      } finally {
+                        setProcessing(false);
+                      }
+                    }
+                  }
+                ]
+              );
+            } catch (error) {
+              console.error('Gallery error:', error);
+            }
+          }
+        },
         { text: 'Cancel', style: 'cancel' },
       ]
     );
   };
 
-  const handlePurchaseBadge = (badge) => {
+  const handlePurchaseBadge = async (badge) => {
+    if (badge.status === 'locked') {
+      Alert.alert(
+        'Badge Locked',
+        'Please complete the required verifications first.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    if (badge.status === 'active') {
+      Alert.alert(
+        'Already Active',
+        'You already have this badge!',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
     Alert.alert(
       'Purchase Badge',
-      `Get ${badge.name} for ₹${badge.price}${badge.period}?`,
+      `Get ${badge.name} for ₹${badge.price}${badge.period}?\n\nThis will give you:\n${badge.benefits.map(b => `• ${b}`).join('\n')}`,
       [
         { text: 'Cancel', style: 'cancel' },
-        { text: 'Continue', onPress: () => console.log('Purchase') },
+        {
+          text: 'Continue',
+          onPress: async () => {
+            try {
+              setProcessing(true);
+              
+              console.log('💳 Creating badge transaction...');
+              
+              // Create transaction for badge purchase
+              const response = await api.createFeaturedTransaction(
+                badge.name,
+                'yearly',
+                badge.price
+              );
+              
+              if (response.success) {
+                Alert.alert(
+                  'Payment Gateway',
+                  'In production, Razorpay payment gateway will open here.\n\nFor demo, simulating successful payment...',
+                  [
+                    {
+                      text: 'OK',
+                      onPress: async () => {
+                        try {
+                          // Confirm payment
+                          const confirmResponse = await api.confirmSubscriptionPayment(
+                            response.transaction._id,
+                            {
+                              razorpayOrderId: 'demo_order_' + Date.now(),
+                              razorpayPaymentId: 'demo_payment_' + Date.now(),
+                              razorpaySignature: 'demo_signature'
+                            }
+                          );
+                          
+                          if (confirmResponse.success) {
+                            Alert.alert(
+                              'Success!',
+                              `${badge.name} badge has been activated on your profile!`,
+                              [
+                                {
+                                  text: 'OK',
+                                  onPress: () => {
+                                    loadVerificationData();
+                                  }
+                                }
+                              ]
+                            );
+                          }
+                        } catch (error) {
+                          Alert.alert('Error', 'Failed to confirm payment. Please contact support.');
+                        }
+                      }
+                    }
+                  ]
+                );
+              }
+            } catch (error) {
+              console.error('❌ Purchase Badge Error:', error);
+              Alert.alert('Error', 'Failed to process badge purchase. Please try again.');
+            } finally {
+              setProcessing(false);
+            }
+          }
+        }
       ]
     );
   };
@@ -144,6 +419,13 @@ const VerificationScreen = ({ onBack, userData, onComplete }) => {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={COLORS.primary} />
+            <Text style={styles.loadingText}>Loading verification data...</Text>
+          </View>
+        ) : (
+          <>
         {/* Trust Score Card */}
         <View style={styles.trustScoreCard}>
           <View style={styles.trustScoreHeader}>
@@ -152,16 +434,20 @@ const VerificationScreen = ({ onBack, userData, onComplete }) => {
             </View>
             <View style={styles.trustScoreInfo}>
               <Text style={styles.trustScoreLabel}>Trust Score</Text>
-              <Text style={styles.trustScoreValue}>45/100</Text>
+              <Text style={styles.trustScoreValue}>{trustScore}/100</Text>
             </View>
           </View>
           
           <View style={styles.trustScoreBar}>
-            <View style={[styles.trustScoreProgress, { width: '45%' }]} />
+            <View style={[styles.trustScoreProgress, { width: `${trustScore}%` }]} />
           </View>
           
           <Text style={styles.trustScoreHint}>
-            Complete verification to increase your trust score and get more customers
+            {trustScore < 50 
+              ? 'Complete verification to increase your trust score and get more customers'
+              : trustScore < 80
+              ? 'Good progress! Add more documents to boost your trust score'
+              : 'Excellent! You have a high trust score'}
           </Text>
         </View>
 
@@ -221,10 +507,26 @@ const VerificationScreen = ({ onBack, userData, onComplete }) => {
                   style={[styles.badgeButton, { backgroundColor: badge.color }]}
                   onPress={() => handlePurchaseBadge(badge)}
                   activeOpacity={0.8}
+                  disabled={processing}
                 >
-                  <Text style={styles.badgeButtonText}>Get This Badge</Text>
-                  <Icon name="arrow-forward" size={18} color={COLORS.white} />
+                  {processing ? (
+                    <ActivityIndicator size="small" color={COLORS.white} />
+                  ) : (
+                    <>
+                      <Text style={styles.badgeButtonText}>Get This Badge</Text>
+                      <Icon name="arrow-forward" size={18} color={COLORS.white} />
+                    </>
+                  )}
                 </TouchableOpacity>
+              )}
+
+              {badge.status === 'active' && (
+                <View style={styles.badgeActiveInfo}>
+                  <Icon name="checkmark-circle" size={20} color={COLORS.secondary} />
+                  <Text style={styles.badgeActiveText}>
+                    Active on your profile
+                  </Text>
+                </View>
               )}
 
               {badge.status === 'locked' && (
@@ -232,6 +534,15 @@ const VerificationScreen = ({ onBack, userData, onComplete }) => {
                   <Icon name="information-circle" size={18} color={COLORS.textSecondary} />
                   <Text style={styles.badgeLockedText}>
                     Complete Basic Verification first
+                  </Text>
+                </View>
+              )}
+
+              {badge.status === 'not_applicable' && (
+                <View style={styles.badgeLockedInfo}>
+                  <Icon name="information-circle" size={18} color={COLORS.textSecondary} />
+                  <Text style={styles.badgeLockedText}>
+                    Not applicable for your worker type
                   </Text>
                 </View>
               )}
@@ -269,18 +580,28 @@ const VerificationScreen = ({ onBack, userData, onComplete }) => {
                 <View style={styles.documentUploaded}>
                   <Icon name="checkmark-circle" size={20} color={COLORS.secondary} />
                   <Text style={styles.documentUploadedText}>Document uploaded</Text>
-                  <TouchableOpacity onPress={() => handleUploadDocument(doc.name)}>
+                  <TouchableOpacity 
+                    onPress={() => handleUploadDocument(doc.name, doc.id)}
+                    disabled={processing}
+                  >
                     <Text style={styles.documentChangeText}>Change</Text>
                   </TouchableOpacity>
                 </View>
               ) : (
                 <TouchableOpacity
                   style={styles.uploadButton}
-                  onPress={() => handleUploadDocument(doc.name)}
+                  onPress={() => handleUploadDocument(doc.name, doc.id)}
                   activeOpacity={0.7}
+                  disabled={processing}
                 >
-                  <Icon name="cloud-upload-outline" size={20} color={COLORS.primary} />
-                  <Text style={styles.uploadButtonText}>Upload Document</Text>
+                  {processing ? (
+                    <ActivityIndicator size="small" color={COLORS.primary} />
+                  ) : (
+                    <>
+                      <Icon name="cloud-upload-outline" size={20} color={COLORS.primary} />
+                      <Text style={styles.uploadButtonText}>Upload Document</Text>
+                    </>
+                  )}
                 </TouchableOpacity>
               )}
             </View>
@@ -307,6 +628,75 @@ const VerificationScreen = ({ onBack, userData, onComplete }) => {
           </View>
         </View>
 
+        {/* Transaction History */}
+        {transactions.length > 0 && (
+          <View style={styles.transactionsSection}>
+            <Text style={styles.sectionTitle}>💳 Verification History</Text>
+            <Text style={styles.sectionSubtitle}>
+              Your recent verification and badge purchases
+            </Text>
+
+            <View style={styles.transactionsList}>
+              {transactions.slice(0, 5).map((transaction, index) => (
+                <View key={index} style={styles.transactionCard}>
+                  <View style={styles.transactionHeader}>
+                    <View style={[
+                      styles.transactionIconContainer,
+                      { backgroundColor: `${COLORS.secondary}15` }
+                    ]}>
+                      <Icon 
+                        name="shield-checkmark" 
+                        size={20} 
+                        color={COLORS.secondary} 
+                      />
+                    </View>
+                    <View style={styles.transactionInfo}>
+                      <Text style={styles.transactionType}>{transaction.type}</Text>
+                      <Text style={styles.transactionPlan}>{transaction.plan}</Text>
+                      <Text style={styles.transactionDate}>
+                        {new Date(transaction.createdAt).toLocaleDateString('en-IN', {
+                          day: 'numeric',
+                          month: 'short',
+                          year: 'numeric'
+                        })}
+                      </Text>
+                    </View>
+                    <View style={styles.transactionRight}>
+                      <Text style={styles.transactionAmount}>₹{transaction.amount}</Text>
+                      <View style={[
+                        styles.transactionStatus,
+                        { backgroundColor: 
+                          transaction.status === 'Success' ? '#10b98115' :
+                          transaction.status === 'Pending' ? '#f59e0b15' :
+                          transaction.status === 'Failed' ? '#ef444415' : '#6b728015'
+                        }
+                      ]}>
+                        <Text style={[
+                          styles.transactionStatusText,
+                          { color:
+                            transaction.status === 'Success' ? '#10b981' :
+                            transaction.status === 'Pending' ? '#f59e0b' :
+                            transaction.status === 'Failed' ? '#ef4444' : '#6b7280'
+                          }
+                        ]}>
+                          {transaction.status}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                </View>
+              ))}
+            </View>
+
+            {transactions.length > 5 && (
+              <TouchableOpacity style={styles.viewAllButton} activeOpacity={0.7}>
+                <Text style={styles.viewAllButtonText}>View All Transactions</Text>
+                <Icon name="arrow-forward" size={16} color={COLORS.primary} />
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+
         {/* Skip Button */}
         <View style={styles.skipSection}>
           <TouchableOpacity
@@ -330,6 +720,8 @@ const VerificationScreen = ({ onBack, userData, onComplete }) => {
         </View>
 
         <View style={styles.bottomPadding} />
+        </>
+        )}
       </ScrollView>
     </View>
   );
@@ -670,6 +1062,107 @@ const styles = StyleSheet.create({
   },
   bottomPadding: {
     height: 40,
+  },
+  loadingContainer: {
+    padding: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 14,
+    color: COLORS.textSecondary,
+  },
+  badgeActiveInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: `${COLORS.secondary}15`,
+    padding: 12,
+    borderRadius: 12,
+  },
+  badgeActiveText: {
+    fontSize: 13,
+    color: COLORS.secondary,
+    fontWeight: '700',
+  },
+  transactionsSection: {
+    marginBottom: 24,
+  },
+  transactionsList: {
+    gap: 12,
+  },
+  transactionCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    padding: 16,
+    elevation: 2,
+  },
+  transactionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  transactionIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  transactionInfo: {
+    flex: 1,
+  },
+  transactionType: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: COLORS.textPrimary,
+    marginBottom: 2,
+  },
+  transactionPlan: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+    marginBottom: 2,
+  },
+  transactionDate: {
+    fontSize: 11,
+    color: COLORS.textLight,
+  },
+  transactionRight: {
+    alignItems: 'flex-end',
+  },
+  transactionAmount: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: COLORS.textPrimary,
+    marginBottom: 6,
+  },
+  transactionStatus: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  transactionStatusText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  viewAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 12,
+    paddingVertical: 12,
+    backgroundColor: COLORS.white,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: COLORS.primary,
+  },
+  viewAllButtonText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: COLORS.primary,
   },
   skipSection: {
     marginTop: 24,

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,142 +7,251 @@ import {
   StyleSheet,
   StatusBar,
   Switch,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import COLORS from '../../constants/colors';
+import * as api from '../../services/api';
+import { useLanguage } from '../../context/LanguageContext';
 
-const SubscriptionScreen = ({ onNavigate, onBack }) => {
+const SubscriptionScreen = ({ onBack, userData }) => {
+  // ✅ Use global language context for language persistence
+  const { selectedLanguage } = useLanguage();
+  
   const [billingCycle, setBillingCycle] = useState('monthly'); // 'monthly' or 'yearly'
+  const [currentPlan, setCurrentPlan] = useState('free');
+  const [transactions, setTransactions] = useState([]);
+  const [plans, setPlans] = useState([]);
+  const [addOns, setAddOns] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [processing, setProcessing] = useState(false);
 
-  const plans = [
-    {
-      id: 'free',
-      name: 'Free',
-      price: 0,
-      period: 'Forever',
-      color: '#6b7280',
-      icon: 'gift-outline',
-      features: [
-        { text: 'Basic profile listing', included: true },
-        { text: 'Standard search visibility', included: true },
-        { text: 'Up to 5 profile views/day', included: true },
-        { text: 'Basic support', included: true },
-        { text: 'Featured listing', included: false },
-        { text: 'Priority placement', included: false },
-        { text: 'Analytics dashboard', included: false },
-        { text: 'Lead insights', included: false },
-      ],
-      badge: 'Current Plan',
-    },
-    {
-      id: 'starter',
-      name: 'Starter',
-      price: billingCycle === 'monthly' ? 499 : 4990,
-      originalPrice: billingCycle === 'yearly' ? 5988 : null,
-      period: billingCycle === 'monthly' ? '/month' : '/year',
-      color: COLORS.accent,
-      icon: 'rocket-outline',
-      features: [
-        { text: 'Everything in Free', included: true },
-        { text: 'Unlimited profile views', included: true },
-        { text: 'Higher search ranking', included: true },
-        { text: '2x visibility boost', included: true },
-        { text: 'Basic analytics', included: true },
-        { text: 'Priority support', included: true },
-        { text: 'Featured listing', included: false },
-        { text: 'Advanced insights', included: false },
-      ],
-      badge: 'Popular',
-      popular: true,
-    },
-    {
-      id: 'pro',
-      name: 'Pro',
-      price: billingCycle === 'monthly' ? 999 : 9990,
-      originalPrice: billingCycle === 'yearly' ? 11988 : null,
-      period: billingCycle === 'monthly' ? '/month' : '/year',
-      color: COLORS.secondary,
-      icon: 'star-outline',
-      features: [
-        { text: 'Everything in Starter', included: true },
-        { text: 'Featured listing (weekly)', included: true },
-        { text: 'Top search placement', included: true },
-        { text: '5x visibility boost', included: true },
-        { text: 'Advanced analytics', included: true },
-        { text: 'Lead insights & tracking', included: true },
-        { text: 'Dedicated support', included: true },
-        { text: 'Verified badge discount', included: true },
-      ],
-      badge: 'Best Value',
-    },
-    {
-      id: 'business',
-      name: 'Business',
-      price: billingCycle === 'monthly' ? 1999 : 19990,
-      originalPrice: billingCycle === 'yearly' ? 23988 : null,
-      period: billingCycle === 'monthly' ? '/month' : '/year',
-      color: COLORS.primary,
-      icon: 'diamond-outline',
-      features: [
-        { text: 'Everything in Pro', included: true },
-        { text: 'Premium featured listing', included: true },
-        { text: 'Guaranteed top 3 placement', included: true },
-        { text: '10x visibility boost', included: true },
-        { text: 'Full analytics suite', included: true },
-        { text: 'Team management tools', included: true },
-        { text: 'Free verified badge', included: true },
-        { text: '24/7 priority support', included: true },
-      ],
-      badge: 'For Agencies',
-    },
-  ];
+  // Log current language for debugging
+  useEffect(() => {
+    console.log('💳 Subscription - Current Language:', selectedLanguage);
+  }, [selectedLanguage]);
 
-  const addOns = [
-    {
-      id: 'featured_weekly',
-      name: 'Featured Listing',
-      description: 'Top placement for 7 days',
-      price: 299,
-      period: '/week',
-      icon: 'star',
-      color: '#f59e0b',
-    },
-    {
-      id: 'featured_monthly',
-      name: 'Featured Listing',
-      description: 'Top placement for 30 days',
-      price: 999,
-      period: '/month',
-      icon: 'star',
-      color: '#f59e0b',
-      savings: 'Save ₹197',
-    },
-    {
-      id: 'verified_badge',
-      name: 'Verified Badge',
-      description: 'Build instant trust',
-      price: 499,
-      period: '/year',
-      icon: 'shield-checkmark',
-      color: COLORS.secondary,
-    },
-    {
-      id: 'trusted_pro',
-      name: 'Trusted Pro Badge',
-      description: 'Premium trust badge',
-      price: 999,
-      period: '/year',
-      icon: 'ribbon',
-      color: COLORS.primary,
-    },
-  ];
+  useEffect(() => {
+    loadSubscriptionData();
+  }, []);
+
+  const loadSubscriptionData = async () => {
+    try {
+      setLoading(true);
+      
+      console.log('💰 Loading subscription data...');
+      
+      // Load current subscription from userData
+      if (userData?.subscription?.plan) {
+        setCurrentPlan(userData.subscription.plan.toLowerCase());
+        console.log('📊 Current plan:', userData.subscription.plan);
+      }
+      
+      // Load plans from backend
+      console.log('📥 Fetching plans from backend...');
+      const plansResponse = await api.getSubscriptionPlans();
+      console.log('📦 Plans response:', plansResponse);
+      
+      if (plansResponse.success && plansResponse.plans) {
+        console.log('✅ Plans loaded:', plansResponse.plans.length);
+        setPlans(plansResponse.plans);
+      } else {
+        console.log('⚠️ No plans in response');
+        setPlans([]);
+      }
+      
+      // Load add-ons from backend
+      console.log('📥 Fetching add-ons from backend...');
+      const addonsResponse = await api.getAddOns();
+      console.log('📦 Add-ons response:', addonsResponse);
+      
+      if (addonsResponse.success && addonsResponse.addons) {
+        console.log('✅ Add-ons loaded:', addonsResponse.addons.length);
+        setAddOns(addonsResponse.addons);
+      } else {
+        console.log('⚠️ No add-ons in response');
+        setAddOns([]);
+      }
+      
+      // Load transaction history
+      console.log('📥 Fetching transactions...');
+      const transResponse = await api.getWorkerTransactions();
+      
+      if (transResponse.success && transResponse.transactions) {
+        console.log('✅ Transactions loaded:', transResponse.transactions.length);
+        setTransactions(transResponse.transactions);
+      } else {
+        console.log('⚠️ No transactions in response');
+        setTransactions([]);
+      }
+      
+      console.log('✅ Subscription data loaded successfully');
+    } catch (error) {
+      console.error('❌ Load Subscription Data Error:', error);
+      console.error('Error details:', error.message);
+      
+      // Set empty arrays on error
+      setPlans([]);
+      setAddOns([]);
+      setTransactions([]);
+      
+      Alert.alert(
+        'Loading Error',
+        'Failed to load subscription data. Please check your connection and try again.',
+        [
+          { text: 'Retry', onPress: () => loadSubscriptionData() },
+          { text: 'Cancel', style: 'cancel' }
+        ]
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUpgrade = async (plan) => {
+    if (plan.id === 'free' || plan.id === currentPlan) {
+      return;
+    }
+
+    const price = billingCycle === 'monthly' ? plan.monthlyPrice : plan.yearlyPrice;
+    const period = billingCycle === 'monthly' ? '/month' : '/year';
+
+    Alert.alert(
+      'Upgrade Subscription',
+      `Upgrade to ${plan.name} plan for ₹${price}${period}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Continue',
+          onPress: () => processSubscription(plan, price)
+        }
+      ]
+    );
+  };
+
+  const processSubscription = async (plan, price) => {
+    try {
+      setProcessing(true);
+      
+      // Create transaction
+      const response = await api.createSubscriptionTransaction(
+        plan.name,
+        billingCycle,
+        price
+      );
+      
+      if (response.success) {
+        // In production, integrate with Razorpay here
+        // For now, simulate payment success
+        Alert.alert(
+          'Payment Gateway',
+          'In production, Razorpay payment gateway will open here.\n\nFor demo, simulating successful payment...',
+          [
+            {
+              text: 'OK',
+              onPress: async () => {
+                try {
+                  // Confirm payment
+                  const confirmResponse = await api.confirmSubscriptionPayment(
+                    response.transaction._id,
+                    {
+                      razorpayOrderId: 'demo_order_' + Date.now(),
+                      razorpayPaymentId: 'demo_payment_' + Date.now(),
+                      razorpaySignature: 'demo_signature'
+                    }
+                  );
+                  
+                  if (confirmResponse.success) {
+                    Alert.alert(
+                      'Success!',
+                      `Your subscription has been upgraded to ${plan.name} plan!`,
+                      [
+                        {
+                          text: 'OK',
+                          onPress: () => {
+                            setCurrentPlan(plan.id);
+                            loadSubscriptionData();
+                          }
+                        }
+                      ]
+                    );
+                  }
+                } catch (error) {
+                  Alert.alert('Error', 'Failed to confirm payment. Please contact support.');
+                }
+              }
+            }
+          ]
+        );
+      }
+    } catch (error) {
+      console.error('❌ Process Subscription Error:', error);
+      Alert.alert('Error', 'Failed to process subscription. Please try again.');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleAddOn = async (addon) => {
+    Alert.alert(
+      'Add-on Purchase',
+      `Purchase ${addon.name} for ₹${addon.price}${addon.period}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Continue',
+          onPress: async () => {
+            try {
+              setProcessing(true);
+              
+              const response = await api.createFeaturedTransaction(
+                addon.name,
+                addon.id.includes('weekly') ? 'weekly' : 'monthly',
+                addon.price
+              );
+              
+              if (response.success) {
+                Alert.alert(
+                  'Success',
+                  'Add-on purchase initiated. Payment gateway will open in production.'
+                );
+              }
+            } catch (error) {
+              Alert.alert('Error', 'Failed to process add-on purchase.');
+            } finally {
+              setProcessing(false);
+            }
+          }
+        }
+      ]
+    );
+  };
 
   const getSavingsPercentage = (plan) => {
-    if (billingCycle === 'yearly' && plan.originalPrice) {
-      const savings = ((plan.originalPrice - plan.price) / plan.originalPrice) * 100;
+    if (billingCycle === 'yearly' && plan.monthlyPrice && plan.yearlyPrice) {
+      const monthlyTotal = plan.monthlyPrice * 12;
+      const savings = ((monthlyTotal - plan.yearlyPrice) / monthlyTotal) * 100;
       return Math.round(savings);
     }
     return 0;
+  };
+
+  const getPlanPrice = (plan) => {
+    if (plan.id === 'free') return 0;
+    return billingCycle === 'monthly' ? plan.monthlyPrice : plan.yearlyPrice;
+  };
+
+  const getPlanPeriod = (plan) => {
+    if (plan.id === 'free') return 'Forever';
+    return billingCycle === 'monthly' ? '/month' : '/year';
+  };
+
+  const getOriginalPrice = (plan) => {
+    if (billingCycle === 'yearly' && plan.monthlyPrice) {
+      return plan.monthlyPrice * 12;
+    }
+    return null;
   };
 
   return (
@@ -200,87 +309,130 @@ const SubscriptionScreen = ({ onNavigate, onBack }) => {
         </View>
 
         {/* Subscription Plans */}
-        <View style={styles.plansContainer}>
-          {plans.map((plan) => (
-            <View
-              key={plan.id}
-              style={[
-                styles.planCard,
-                plan.popular && styles.planCardPopular,
-              ]}
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={COLORS.primary} />
+            <Text style={styles.loadingText}>Loading subscription data...</Text>
+          </View>
+        ) : plans.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Icon name="alert-circle-outline" size={64} color={COLORS.textSecondary} />
+            <Text style={styles.emptyText}>No Plans Available</Text>
+            <Text style={styles.emptySubtext}>
+              Unable to load subscription plans. Please check your connection.
+            </Text>
+            <TouchableOpacity 
+              style={styles.retryButton} 
+              onPress={loadSubscriptionData}
+              activeOpacity={0.8}
             >
-              {plan.badge && (
-                <View style={[styles.planBadge, { backgroundColor: plan.color }]}>
-                  <Text style={styles.planBadgeText}>{plan.badge}</Text>
-                </View>
-              )}
-
-              <View style={[styles.planIconContainer, { backgroundColor: `${plan.color}15` }]}>
-                <Icon name={plan.icon} size={36} color={plan.color} />
-              </View>
-
-              <Text style={styles.planName}>{plan.name}</Text>
+              <Icon name="refresh" size={20} color={COLORS.white} />
+              <Text style={styles.retryButtonText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.plansContainer}>
+            {plans.map((plan) => {
+              const isCurrentPlan = plan.id === currentPlan;
+              const badge = isCurrentPlan ? 'Current Plan' : 
+                           plan.popular ? 'Popular' : 
+                           plan.id === 'pro' ? 'Best Value' : 
+                           plan.id === 'business' ? 'For Agencies' : null;
               
-              <View style={styles.planPriceContainer}>
-                {plan.originalPrice && (
-                  <Text style={styles.planOriginalPrice}>₹{plan.originalPrice}</Text>
-                )}
-                <View style={styles.planPriceRow}>
-                  <Text style={styles.planPrice}>₹{plan.price}</Text>
-                  <Text style={styles.planPeriod}>{plan.period}</Text>
-                </View>
-                {getSavingsPercentage(plan) > 0 && (
-                  <View style={styles.savingsTag}>
-                    <Text style={styles.savingsTagText}>
-                      Save {getSavingsPercentage(plan)}%
-                    </Text>
-                  </View>
-                )}
-              </View>
-
-              <View style={styles.planFeatures}>
-                {plan.features.map((feature, index) => (
-                  <View key={index} style={styles.featureRow}>
-                    <Icon
-                      name={feature.included ? 'checkmark-circle' : 'close-circle'}
-                      size={18}
-                      color={feature.included ? plan.color : '#cbd5e1'}
-                    />
-                    <Text
-                      style={[
-                        styles.featureText,
-                        !feature.included && styles.featureTextDisabled,
-                      ]}
-                    >
-                      {feature.text}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-
-              <TouchableOpacity
-                style={[
-                  styles.planButton,
-                  { backgroundColor: plan.id === 'free' ? '#e5e7eb' : plan.color },
-                  plan.popular && styles.planButtonPopular,
-                ]}
-                activeOpacity={0.8}
-              >
-                <Text
+              return (
+                <View
+                  key={plan.id}
                   style={[
-                    styles.planButtonText,
-                    { color: plan.id === 'free' ? COLORS.textSecondary : COLORS.white },
+                    styles.planCard,
+                    plan.popular && styles.planCardPopular,
+                    isCurrentPlan && styles.planCardCurrent,
                   ]}
                 >
-                  {plan.id === 'free' ? 'Current Plan' : 'Upgrade Now'}
-                </Text>
-                {plan.id !== 'free' && (
-                  <Icon name="arrow-forward" size={18} color={COLORS.white} />
-                )}
-              </TouchableOpacity>
-            </View>
-          ))}
-        </View>
+                  {badge && (
+                    <View style={[
+                      styles.planBadge, 
+                      { backgroundColor: isCurrentPlan ? '#10b981' : plan.color }
+                    ]}>
+                      <Text style={styles.planBadgeText}>{badge}</Text>
+                    </View>
+                  )}
+
+                  <View style={[styles.planIconContainer, { backgroundColor: `${plan.color}15` }]}>
+                    <Icon name={plan.icon} size={36} color={plan.color} />
+                  </View>
+
+                  <Text style={styles.planName}>{plan.name}</Text>
+                  
+                  <View style={styles.planPriceContainer}>
+                    {getOriginalPrice(plan) && (
+                      <Text style={styles.planOriginalPrice}>₹{getOriginalPrice(plan)}</Text>
+                    )}
+                    <View style={styles.planPriceRow}>
+                      <Text style={styles.planPrice}>₹{getPlanPrice(plan)}</Text>
+                      <Text style={styles.planPeriod}>{getPlanPeriod(plan)}</Text>
+                    </View>
+                    {getSavingsPercentage(plan) > 0 && (
+                      <View style={styles.savingsTag}>
+                        <Text style={styles.savingsTagText}>
+                          Save {getSavingsPercentage(plan)}%
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+
+                  <View style={styles.planFeatures}>
+                    {plan.features.map((feature, index) => (
+                      <View key={index} style={styles.featureRow}>
+                        <Icon
+                          name={feature.included ? 'checkmark-circle' : 'close-circle'}
+                          size={18}
+                          color={feature.included ? plan.color : '#cbd5e1'}
+                        />
+                        <Text
+                          style={[
+                            styles.featureText,
+                            !feature.included && styles.featureTextDisabled,
+                          ]}
+                        >
+                          {feature.text}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.planButton,
+                      { backgroundColor: isCurrentPlan ? '#e5e7eb' : plan.color },
+                      plan.popular && !isCurrentPlan && styles.planButtonPopular,
+                    ]}
+                    activeOpacity={0.8}
+                    onPress={() => handleUpgrade(plan)}
+                    disabled={isCurrentPlan || processing}
+                  >
+                    {processing ? (
+                      <ActivityIndicator size="small" color={COLORS.white} />
+                    ) : (
+                      <>
+                        <Text
+                          style={[
+                            styles.planButtonText,
+                            { color: isCurrentPlan ? COLORS.textSecondary : COLORS.white },
+                          ]}
+                        >
+                          {isCurrentPlan ? 'Current Plan' : 'Upgrade Now'}
+                        </Text>
+                        {!isCurrentPlan && (
+                          <Icon name="arrow-forward" size={18} color={COLORS.white} />
+                        )}
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
+          </View>
+        )}
 
         {/* Add-ons Section */}
         <View style={styles.addOnsSection}>
@@ -313,10 +465,16 @@ const SubscriptionScreen = ({ onNavigate, onBack }) => {
                 <TouchableOpacity
                   style={[styles.addonButton, { borderColor: addon.color }]}
                   activeOpacity={0.7}
+                  onPress={() => handleAddOn(addon)}
+                  disabled={processing}
                 >
-                  <Text style={[styles.addonButtonText, { color: addon.color }]}>
-                    Add to Cart
-                  </Text>
+                  {processing ? (
+                    <ActivityIndicator size="small" color={addon.color} />
+                  ) : (
+                    <Text style={[styles.addonButtonText, { color: addon.color }]}>
+                      Add to Cart
+                    </Text>
+                  )}
                 </TouchableOpacity>
               </View>
             ))}
@@ -346,6 +504,75 @@ const SubscriptionScreen = ({ onNavigate, onBack }) => {
             ))}
           </View>
         </View>
+
+        {/* Transaction History */}
+        {transactions.length > 0 && (
+          <View style={styles.transactionsSection}>
+            <Text style={styles.sectionTitle}>💳 Transaction History</Text>
+            <Text style={styles.sectionSubtitle}>
+              Your recent subscription and add-on purchases
+            </Text>
+
+            <View style={styles.transactionsList}>
+              {transactions.slice(0, 5).map((transaction, index) => (
+                <View key={index} style={styles.transactionCard}>
+                  <View style={styles.transactionHeader}>
+                    <View style={[
+                      styles.transactionIconContainer,
+                      { backgroundColor: transaction.type === 'Subscription' ? `${COLORS.primary}15` : `${COLORS.accent}15` }
+                    ]}>
+                      <Icon 
+                        name={transaction.type === 'Subscription' ? 'card' : 'star'} 
+                        size={20} 
+                        color={transaction.type === 'Subscription' ? COLORS.primary : COLORS.accent} 
+                      />
+                    </View>
+                    <View style={styles.transactionInfo}>
+                      <Text style={styles.transactionType}>{transaction.type}</Text>
+                      <Text style={styles.transactionPlan}>{transaction.plan}</Text>
+                      <Text style={styles.transactionDate}>
+                        {new Date(transaction.createdAt).toLocaleDateString('en-IN', {
+                          day: 'numeric',
+                          month: 'short',
+                          year: 'numeric'
+                        })}
+                      </Text>
+                    </View>
+                    <View style={styles.transactionRight}>
+                      <Text style={styles.transactionAmount}>₹{transaction.amount}</Text>
+                      <View style={[
+                        styles.transactionStatus,
+                        { backgroundColor: 
+                          transaction.status === 'Success' ? '#10b98115' :
+                          transaction.status === 'Pending' ? '#f59e0b15' :
+                          transaction.status === 'Failed' ? '#ef444415' : '#6b728015'
+                        }
+                      ]}>
+                        <Text style={[
+                          styles.transactionStatusText,
+                          { color:
+                            transaction.status === 'Success' ? '#10b981' :
+                            transaction.status === 'Pending' ? '#f59e0b' :
+                            transaction.status === 'Failed' ? '#ef4444' : '#6b7280'
+                          }
+                        ]}>
+                          {transaction.status}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                </View>
+              ))}
+            </View>
+
+            {transactions.length > 5 && (
+              <TouchableOpacity style={styles.viewAllButton} activeOpacity={0.7}>
+                <Text style={styles.viewAllButtonText}>View All Transactions</Text>
+                <Icon name="arrow-forward" size={16} color={COLORS.primary} />
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
 
         <View style={styles.bottomPadding} />
       </ScrollView>
@@ -452,6 +679,10 @@ const styles = StyleSheet.create({
   planCardPopular: {
     borderColor: COLORS.accent,
     elevation: 8,
+  },
+  planCardCurrent: {
+    borderColor: '#10b981',
+    elevation: 6,
   },
   planBadge: {
     position: 'absolute',
@@ -673,6 +904,130 @@ const styles = StyleSheet.create({
   },
   bottomPadding: {
     height: 40,
+  },
+  loadingContainer: {
+    padding: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 14,
+    color: COLORS.textSecondary,
+  },
+  emptyContainer: {
+    padding: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.white,
+    borderRadius: 24,
+    marginHorizontal: 16,
+  },
+  emptyText: {
+    marginTop: 16,
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+  },
+  emptySubtext: {
+    marginTop: 8,
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  retryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 24,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    backgroundColor: COLORS.primary,
+    borderRadius: 12,
+  },
+  retryButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.white,
+  },
+  transactionsSection: {
+    marginBottom: 24,
+  },
+  transactionsList: {
+    gap: 12,
+  },
+  transactionCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    padding: 16,
+    elevation: 2,
+  },
+  transactionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  transactionIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  transactionInfo: {
+    flex: 1,
+  },
+  transactionType: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: COLORS.textPrimary,
+    marginBottom: 2,
+  },
+  transactionPlan: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+    marginBottom: 2,
+  },
+  transactionDate: {
+    fontSize: 11,
+    color: COLORS.textLight,
+  },
+  transactionRight: {
+    alignItems: 'flex-end',
+  },
+  transactionAmount: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: COLORS.textPrimary,
+    marginBottom: 6,
+  },
+  transactionStatus: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  transactionStatusText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  viewAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 12,
+    paddingVertical: 12,
+    backgroundColor: COLORS.white,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: COLORS.primary,
+  },
+  viewAllButtonText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: COLORS.primary,
   },
 });
 

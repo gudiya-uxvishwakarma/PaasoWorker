@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -7,7 +7,8 @@ import {
   TextInput, 
   StyleSheet,
   StatusBar,
-  Alert
+  Alert,
+  BackHandler
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import COLORS from '../../constants/colors';
@@ -15,18 +16,42 @@ import NotificationSettingsScreen from '../settings/NotificationSettingsScreen';
 import PrivacySettingsScreen from '../settings/PrivacySettingsScreen';
 import HelpSupportScreen from '../settings/HelpSupportScreen';
 import TermsPrivacyScreen from '../settings/TermsPrivacyScreen';
+import { useLanguage } from '../../context/LanguageContext';
 
 const ProfileScreen = ({ userData, onNavigate, onBack, onLogout }) => {
-  const [isEditing, setIsEditing] = useState(false);
-  const [name, setName] = useState(userData?.name || '');
-  const [skills, setSkills] = useState(userData?.skills || '');
-  const [serviceAreas, setServiceAreas] = useState(userData?.serviceAreas || '');
   const [currentScreen, setCurrentScreen] = useState('profile');
+  
+  // ✅ Use global language context for language persistence
+  const { selectedLanguage } = useLanguage();
+  
+  // ✅ Use userData directly instead of storing in state
+  // This ensures ProfileScreen always shows latest data
 
-  const handleSave = () => {
-    setIsEditing(false);
-    Alert.alert('Success', 'Profile updated successfully');
-  };
+  // Log current language for debugging
+  useEffect(() => {
+    console.log('👤 Profile - Current Language:', selectedLanguage);
+  }, [selectedLanguage]);
+
+  // ✅ Handle hardware back button
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (currentScreen !== 'profile') {
+        // If in sub-screen, go back to profile
+        setCurrentScreen('profile');
+        return true;
+      } else {
+        // If in profile screen, go back to dashboard
+        if (onBack) {
+          onBack();
+        } else if (onNavigate) {
+          onNavigate('home');
+        }
+        return true;
+      }
+    });
+
+    return () => backHandler.remove();
+  }, [currentScreen, onBack, onNavigate]);
 
   const handleLogout = () => {
     Alert.alert(
@@ -52,16 +77,68 @@ const ProfileScreen = ({ userData, onNavigate, onBack, onLogout }) => {
   };
 
   const getWorkerTypeInfo = () => {
+    // ✅ Map backend format to frontend format
+    const backendToFrontendMapping = {
+      'Worker': 'individual',
+      'Crew / Team': 'crew_leader',
+      'Contractor': 'contractor',
+      'Service Provider': 'service_provider'
+    };
+    
+    // Get workerType from userData
+    let workerTypeKey = userData?.workerType;
+    
+    // Debug log
+    console.log('🔍 Original workerType:', workerTypeKey);
+    
+    // If it's backend format, convert to frontend format
+    if (backendToFrontendMapping[workerTypeKey]) {
+      workerTypeKey = backendToFrontendMapping[workerTypeKey];
+      console.log('🔄 Converted to frontend format:', workerTypeKey);
+    }
+    
     const types = {
       individual: { icon: 'person', label: 'Individual Worker', color: COLORS.accent },
       crew_leader: { icon: 'people', label: 'Crew Leader', color: COLORS.secondary },
       contractor: { icon: 'construct', label: 'Contractor', color: COLORS.primary },
       service_provider: { icon: 'business', label: 'Service Provider', color: '#f59e0b' },
     };
-    return types[userData?.workerType] || { icon: 'person', label: 'Worker', color: COLORS.accent };
+    
+    const result = types[workerTypeKey] || { icon: 'person', label: 'Worker', color: COLORS.accent };
+    console.log('✅ Final worker type info:', result);
+    
+    return result;
   };
 
   const workerTypeInfo = getWorkerTypeInfo();
+  
+  // Get availability status info
+  const getAvailabilityInfo = () => {
+    const availability = userData?.availability || 
+                        (userData?.online ? 'online' : 'offline');
+    
+    console.log('🔍 Availability from userData:', availability);
+    
+    let statusColor = '#ef4444'; // offline - red
+    let statusIcon = '🔴';
+    let statusText = 'Offline';
+    
+    if (availability === 'online') {
+      statusColor = '#10b981'; // green
+      statusIcon = '🟢';
+      statusText = 'Online';
+    } else if (availability === 'busy') {
+      statusColor = '#f59e0b'; // orange
+      statusIcon = '🟡';
+      statusText = 'Busy';
+    }
+    
+    console.log('✅ Availability info:', { statusText, statusIcon, statusColor });
+    
+    return { statusColor, statusIcon, statusText, availability };
+  };
+  
+  const availabilityInfo = getAvailabilityInfo();
 
   if (currentScreen === 'notifications') {
     return <NotificationSettingsScreen onBack={() => setCurrentScreen('profile')} />;
@@ -94,17 +171,7 @@ const ProfileScreen = ({ userData, onNavigate, onBack, onLogout }) => {
             <Icon name="arrow-back" size={24} color={COLORS.white} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>My Profile</Text>
-          <TouchableOpacity 
-            style={styles.editButton}
-            onPress={() => isEditing ? handleSave() : setIsEditing(true)}
-            activeOpacity={0.8}
-          >
-            <Icon 
-              name={isEditing ? 'checkmark' : 'create-outline'} 
-              size={20} 
-              color={COLORS.white} 
-            />
-          </TouchableOpacity>
+          <View style={{ width: 40 }} />
         </View>
       </View>
 
@@ -117,10 +184,10 @@ const ProfileScreen = ({ userData, onNavigate, onBack, onLogout }) => {
         <View style={styles.profileHeader}>
           <View style={[styles.avatarContainer, { backgroundColor: workerTypeInfo.color }]}>
             <Text style={styles.avatarText}>
-              {name.charAt(0).toUpperCase()}
+              {(userData?.name || 'U').charAt(0).toUpperCase()}
             </Text>
           </View>
-          <Text style={styles.profileName}>{name}</Text>
+          <Text style={styles.profileName}>{userData?.name || 'User'}</Text>
           <View style={styles.workerTypeBadge}>
             <Icon name={workerTypeInfo.icon} size={16} color={workerTypeInfo.color} />
             <Text style={[styles.workerTypeText, { color: workerTypeInfo.color }]}>
@@ -132,6 +199,27 @@ const ProfileScreen = ({ userData, onNavigate, onBack, onLogout }) => {
               <Icon name="checkmark-circle" size={14} color={COLORS.primary} />
               <Text style={styles.verifiedText}>Phone Verified</Text>
             </View>
+            
+            {/* Show active badges */}
+            {userData?.badges && userData?.badges.length > 0 && 
+             userData?.badges.map((badge, index) => {
+              if (badge === 'Trusted Pro') {
+                return (
+                  <View key={index} style={[styles.premiumBadgeChip, { backgroundColor: '#fef3e2', borderWidth: 1, borderColor: '#fed7aa' }]}>
+                    <Icon name="star" size={14} color="#f59e0b" />
+                    <Text style={[styles.premiumBadgeChipText, { color: '#f59e0b' }]}>Trusted Pro</Text>
+                  </View>
+                );
+              } else if (badge === 'Business Verified') {
+                return (
+                  <View key={index} style={[styles.premiumBadgeChip, { backgroundColor: '#e0e7ff', borderWidth: 1, borderColor: '#c7d2fe' }]}>
+                    <Icon name="briefcase" size={14} color={COLORS.primary} />
+                    <Text style={[styles.premiumBadgeChipText, { color: COLORS.primary }]}>Business Verified</Text>
+                  </View>
+                );
+              }
+              return null;
+            })}
           </View>
         </View>
 
@@ -144,17 +232,7 @@ const ProfileScreen = ({ userData, onNavigate, onBack, onLogout }) => {
           
           <View style={styles.infoGroup}>
             <Text style={styles.infoLabel}>Full Name</Text>
-            {isEditing ? (
-              <TextInput
-                style={styles.input}
-                value={name}
-                onChangeText={setName}
-                placeholder="Enter your name"
-                placeholderTextColor={COLORS.textLight}
-              />
-            ) : (
-              <Text style={styles.infoValue}>{name}</Text>
-            )}
+            <Text style={styles.infoValue}>{userData?.name || 'Not provided'}</Text>
           </View>
 
           <View style={styles.infoGroup}>
@@ -169,7 +247,11 @@ const ProfileScreen = ({ userData, onNavigate, onBack, onLogout }) => {
             <Text style={styles.infoLabel}>Mobile Number</Text>
             <View style={styles.infoValueRow}>
               <Icon name="call-outline" size={18} color={COLORS.textSecondary} />
-              <Text style={styles.infoValue}>{userData?.mobile || 'Not provided'}</Text>
+              <Text style={styles.infoValue}>
+                {userData?.mobile 
+                  ? `+91 ${userData?.mobile}` 
+                  : 'Not provided'}
+              </Text>
             </View>
           </View>
 
@@ -191,14 +273,15 @@ const ProfileScreen = ({ userData, onNavigate, onBack, onLogout }) => {
         </View>
 
         {/* Languages */}
-        {userData?.selectedLanguages && userData.selectedLanguages.length > 0 && (
+        {userData?.languages && userData?.languages.length > 0 && (
           <View style={styles.card}>
             <View style={styles.cardTitleContainer}>
+              <Icon name="language-outline" size={22} color="#8b5cf6" />
               <Text style={styles.cardTitle}>Languages</Text>
             </View>
             
             <View style={styles.skillsContainer}>
-              {userData.selectedLanguages.map((language, index) => (
+              {(userData?.languages || []).map((language, index) => (
                 <View key={index} style={[styles.skillChip, { backgroundColor: '#8b5cf615', borderColor: '#8b5cf640' }]}>
                   <Text style={[styles.skillText, { color: '#8b5cf6' }]}>{language}</Text>
                 </View>
@@ -214,26 +297,26 @@ const ProfileScreen = ({ userData, onNavigate, onBack, onLogout }) => {
             <Text style={styles.cardTitle}>Services</Text>
           </View>
           
-          {isEditing ? (
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              value={skills}
-              onChangeText={setSkills}
-              multiline
-              numberOfLines={4}
-              placeholder="Enter your services"
-              placeholderTextColor={COLORS.textLight}
-            />
-          ) : (
-            <View style={styles.skillsContainer}>
-              {(userData?.services || skills).split(',').map((skill, index) => (
+          <View style={styles.skillsContainer}>
+            {(() => {
+              // Handle both array and string formats
+              let skillsArray = [];
+              const categoryData = userData?.category || userData?.category;
+                
+              if (Array.isArray(categoryData)) {
+                skillsArray = categoryData;
+              } else if (typeof categoryData === 'string') {
+                skillsArray = categoryData.split(',').map(s => s.trim()).filter(s => s);
+              }
+              
+              return skillsArray.map((skill, index) => (
                 <View key={index} style={styles.skillChip}>
                   <Icon name="checkmark-circle" size={14} color={COLORS.accent} />
-                  <Text style={styles.skillText}>{skill.trim()}</Text>
+                  <Text style={styles.skillText}>{typeof skill === 'string' ? skill.trim() : skill}</Text>
                 </View>
-              ))}
-            </View>
-          )}
+              ));
+            })()}
+          </View>
         </View>
 
         {/* Service Areas / Location */}
@@ -243,26 +326,20 @@ const ProfileScreen = ({ userData, onNavigate, onBack, onLogout }) => {
             <Text style={styles.cardTitle}>Location / Service Areas</Text>
           </View>
           
-          {isEditing ? (
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              value={serviceAreas}
-              onChangeText={setServiceAreas}
-              multiline
-              numberOfLines={4}
-              placeholder="Enter service areas"
-              placeholderTextColor={COLORS.textLight}
-            />
-          ) : (
-            <View style={styles.areasContainer}>
-              {(userData?.serviceAreas || serviceAreas).split(',').map((area, index) => (
-                <View key={index} style={styles.areaChip}>
-                  <Icon name="location" size={14} color={COLORS.primary} />
-                  <Text style={styles.areaText}>{area.trim()}</Text>
-                </View>
-              ))}
-            </View>
-          )}
+          <View style={styles.areasContainer}>
+            {(() => {
+              const serviceAreaData = userData?.serviceArea || userData?.serviceArea || '';
+              if (typeof serviceAreaData === 'string' && serviceAreaData) {
+                return serviceAreaData.split(',').map((area, index) => (
+                  <View key={index} style={styles.areaChip}>
+                    <Icon name="location" size={14} color={COLORS.primary} />
+                    <Text style={styles.areaText}>{area.trim()}</Text>
+                  </View>
+                ));
+              }
+              return null;
+            })()}
+          </View>
         </View>
 
         {/* Verification Status */}
@@ -283,55 +360,119 @@ const ProfileScreen = ({ userData, onNavigate, onBack, onLogout }) => {
           </View>
 
           <View style={styles.verificationItem}>
-            <View style={[styles.verificationIcon, { backgroundColor: '#fef3c7' }]}>
-              <Icon name="time-outline" size={24} color="#ca8a04" />
+            <View style={[styles.verificationIcon, { backgroundColor: userData?.kycVerified ? '#d1fae5' : '#fef3c7' }]}>
+              <Icon name={userData?.kycVerified ? "checkmark-circle" : "time-outline"} size={24} color={userData?.kycVerified ? '#10b981' : "#ca8a04"} />
             </View>
             <View style={styles.verificationInfo}>
               <Text style={styles.verificationTitle}>KYC Documents</Text>
-              <Text style={styles.verificationStatusPending}>Not Uploaded</Text>
+              <Text style={userData?.kycVerified ? styles.verificationStatus : styles.verificationStatusPending}>
+                {userData?.kycVerified ? 'Verified' : 'Pending Verification'}
+              </Text>
             </View>
           </View>
 
-          <TouchableOpacity style={styles.uploadButton} activeOpacity={0.8}>
-            <Icon name="cloud-upload-outline" size={20} color={COLORS.accent} />
-            <Text style={styles.uploadButtonText}>Upload KYC Documents</Text>
-          </TouchableOpacity>
+          {!userData?.kycVerified && (
+            <TouchableOpacity style={styles.uploadButton} activeOpacity={0.8}>
+              <Icon name="cloud-upload-outline" size={20} color={COLORS.accent} />
+              <Text style={styles.uploadButtonText}>Upload KYC Documents</Text>
+            </TouchableOpacity>
+          )}
 
           <View style={styles.divider} />
 
           <Text style={styles.premiumTitle}>Premium Verification Badges</Text>
           
-          <TouchableOpacity style={styles.premiumBadge} activeOpacity={0.7}>
-            <View style={styles.premiumBadgeContent}>
-              <View style={styles.premiumBadgeIconContainer}>
-                <Icon name="star" size={20} color="#f59e0b" />
-              </View>
-              <View style={styles.premiumBadgeInfo}>
-                <Text style={styles.premiumBadgeTitle}>Trusted Pro</Text>
-                <Text style={styles.premiumBadgeSubtitle}>KYC verified + Priority support</Text>
+          {/* Show current badges if any */}
+          {userData?.badges && userData?.badges.length > 0 && (
+            <View style={styles.currentBadgesContainer}>
+              <Text style={styles.currentBadgesTitle}>Your Active Badges:</Text>
+              <View style={styles.badgesRow}>
+                {userData?.badges.map((badge, index) => {
+                  if (badge === 'Trusted Pro') {
+                    return (
+                      <View key={index} style={[styles.activeBadge, { backgroundColor: '#fef3e2', borderColor: '#fed7aa' }]}>
+                        <Icon name="star" size={16} color="#f59e0b" />
+                        <Text style={[styles.activeBadgeText, { color: '#f59e0b' }]}>Trusted Pro</Text>
+                      </View>
+                    );
+                  } else if (badge === 'Business Verified') {
+                    return (
+                      <View key={index} style={[styles.activeBadge, { backgroundColor: '#e0e7ff', borderColor: '#c7d2fe' }]}>
+                        <Icon name="briefcase" size={16} color={COLORS.primary} />
+                        <Text style={[styles.activeBadgeText, { color: COLORS.primary }]}>Business Verified</Text>
+                      </View>
+                    );
+                  }
+                  return null;
+                })}
               </View>
             </View>
-            <View style={styles.premiumBadgePrice}>
-              <Text style={styles.premiumBadgePriceAmount}>₹499</Text>
-              <Text style={styles.premiumBadgePricePeriod}>/year</Text>
-            </View>
-          </TouchableOpacity>
+          )}
+          
+          {/* Available badges to purchase */}
+          {(!userData?.badges || !userData?.badges.includes('Trusted Pro')) && (
+            <TouchableOpacity style={styles.premiumBadge} activeOpacity={0.7}>
+              <View style={styles.premiumBadgeContent}>
+                <View style={styles.premiumBadgeIconContainer}>
+                  <Icon name="star" size={20} color="#f59e0b" />
+                </View>
+                <View style={styles.premiumBadgeInfo}>
+                  <Text style={styles.premiumBadgeTitle}>Trusted Pro</Text>
+                  <Text style={styles.premiumBadgeSubtitle}>KYC verified + Priority support</Text>
+                </View>
+              </View>
+              <View style={styles.premiumBadgePrice}>
+                <Text style={styles.premiumBadgePriceAmount}>₹499</Text>
+                <Text style={styles.premiumBadgePricePeriod}>/year</Text>
+              </View>
+            </TouchableOpacity>
+          )}
 
-          <TouchableOpacity style={styles.premiumBadge} activeOpacity={0.7}>
-            <View style={styles.premiumBadgeContent}>
-              <View style={styles.premiumBadgeIconContainer}>
-                <Icon name="briefcase" size={20} color={COLORS.primary} />
+          {(!userData?.badges || !userData?.badges.includes('Business Verified')) && (
+            <TouchableOpacity style={styles.premiumBadge} activeOpacity={0.7}>
+              <View style={styles.premiumBadgeContent}>
+                <View style={styles.premiumBadgeIconContainer}>
+                  <Icon name="briefcase" size={20} color={COLORS.primary} />
+                </View>
+                <View style={styles.premiumBadgeInfo}>
+                  <Text style={styles.premiumBadgeTitle}>Business Verified</Text>
+                  <Text style={styles.premiumBadgeSubtitle}>GST verified + Business badge</Text>
+                </View>
               </View>
-              <View style={styles.premiumBadgeInfo}>
-                <Text style={styles.premiumBadgeTitle}>Business Verified</Text>
-                <Text style={styles.premiumBadgeSubtitle}>GST verified + Business badge</Text>
+              <View style={styles.premiumBadgePrice}>
+                <Text style={styles.premiumBadgePriceAmount}>₹999</Text>
+                <Text style={styles.premiumBadgePricePeriod}>/year</Text>
+              </View>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Availability Status */}
+        <View style={styles.card}>
+          <View style={styles.cardTitleContainer}>
+            <Icon name="radio-outline" size={22} color={COLORS.secondary} />
+            <Text style={styles.cardTitle}>Availability Status</Text>
+          </View>
+          
+          <View style={styles.availabilityContainer}>
+            <View style={styles.availabilityRow}>
+              <View style={styles.availabilityInfo}>
+                <Text style={styles.availabilityLabel}>Current Status</Text>
+                <View style={styles.availabilityBadge}>
+                  <Text style={{ fontSize: 16, marginRight: 6 }}>{availabilityInfo.statusIcon}</Text>
+                  <Text style={[styles.availabilityText, { color: availabilityInfo.statusColor }]}>
+                    {availabilityInfo.statusText}
+                  </Text>
+                </View>
               </View>
             </View>
-            <View style={styles.premiumBadgePrice}>
-              <Text style={styles.premiumBadgePriceAmount}>₹999</Text>
-              <Text style={styles.premiumBadgePricePeriod}>/year</Text>
-            </View>
-          </TouchableOpacity>
+            
+            <Text style={styles.availabilityHint}>
+              {availabilityInfo.availability === 'online' && '✓ You are visible to customers and can receive job requests'}
+              {availabilityInfo.availability === 'busy' && '⚠ Limited availability will be shown to customers'}
+              {availabilityInfo.availability === 'offline' && '✗ You are hidden from search. Change status from dashboard to receive jobs'}
+            </Text>
+          </View>
         </View>
 
         {/* Working Schedule */}
@@ -362,29 +503,6 @@ const ProfileScreen = ({ userData, onNavigate, onBack, onLogout }) => {
             <Text style={styles.scheduleButtonText}>Update Schedule</Text>
           </TouchableOpacity>
         </View>
-
-        {/* Crew Management (for Crew Leaders) */}
-        {userData?.workerType === 'crew_leader' && (
-          <View style={styles.card}>
-            <View style={styles.cardTitleContainer}>
-              <Icon name="people-outline" size={22} color={COLORS.secondary} />
-              <Text style={styles.cardTitle}>Crew Management</Text>
-            </View>
-            
-            <View style={styles.crewInfo}>
-              <View style={styles.crewLeft}>
-                <Icon name="people" size={18} color={COLORS.textSecondary} />
-                <Text style={styles.crewLabel}>Team Size</Text>
-              </View>
-              <Text style={styles.crewValue}>{userData?.crewSize || 0} members</Text>
-            </View>
-
-            <TouchableOpacity style={styles.manageButton} activeOpacity={0.8}>
-              <Icon name="settings-outline" size={18} color={COLORS.accent} />
-              <Text style={styles.manageButtonText}>Manage Team Members</Text>
-            </TouchableOpacity>
-          </View>
-        )}
 
         {/* Account Actions */}
         <View style={styles.card}>
@@ -559,7 +677,9 @@ const styles = StyleSheet.create({
   },
   badgeContainer: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
+    marginTop: 4,
   },
   verifiedBadge: {
     flexDirection: 'row',
@@ -574,6 +694,89 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: COLORS.primary,
     fontWeight: '600',
+  },
+  premiumBadgeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+  },
+  premiumBadgeChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  currentBadgesContainer: {
+    marginBottom: 16,
+    padding: 14,
+    backgroundColor: '#f0fdf4',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#86efac',
+  },
+  currentBadgesTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#166534',
+    marginBottom: 10,
+  },
+  badgesRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  activeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  activeBadgeText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  availabilityContainer: {
+    gap: 12,
+  },
+  availabilityRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  availabilityInfo: {
+    flex: 1,
+  },
+  availabilityLabel: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    marginBottom: 8,
+    fontWeight: '500',
+  },
+  availabilityBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: COLORS.background,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignSelf: 'flex-start',
+  },
+  availabilityText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  availabilityHint: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    lineHeight: 18,
+    backgroundColor: COLORS.background,
+    padding: 12,
+    borderRadius: 10,
   },
   card: {
     backgroundColor: COLORS.surface,

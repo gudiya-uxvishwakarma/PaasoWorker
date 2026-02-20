@@ -9,13 +9,24 @@ import {
   StatusBar,
   Alert,
   ActivityIndicator,
+  Image,
+  Platform,
+  Linking,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
+import { launchImageLibrary } from 'react-native-image-picker';
 import COLORS from '../../constants/colors';
+import PhoneInput from '../../components/PhoneInput';
 import * as api from '../../services/api';
+import { useLanguage } from '../../context/LanguageContext';
+import { getFCMToken } from '../../services/fcm.service';
 
-const ProfileDetailsScreen = ({ workerType, selectedLanguage = 'English', onComplete, onBack }) => {
+const ProfileDetailsScreen = ({ workerType, onComplete, onBack }) => {
   const [loading, setLoading] = useState(false);
+  
+  // ✅ Use global language context instead of prop
+  const { selectedLanguage } = useLanguage();
+  
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -46,14 +57,14 @@ const ProfileDetailsScreen = ({ workerType, selectedLanguage = 'English', onComp
   const [showQRCode, setShowQRCode] = useState(false);
 
   const availableLanguages = [
-    { code: 'en', name: 'English', nativeName: 'English' },
-    { code: 'hi', name: 'Hindi', nativeName: 'हिंदी' },
-    { code: 'ta', name: 'Tamil', nativeName: 'தமிழ்' },
-    { code: 'kn', name: 'Kannada', nativeName: 'ಕನ್ನಡ' },
-    { code: 'te', name: 'Telugu', nativeName: 'తెలుగు' },
-    { code: 'mr', name: 'Marathi', nativeName: 'मराठी' },
-    { code: 'gu', name: 'Gujarati', nativeName: 'ગુજરાતી' },
-    { code: 'bn', name: 'Bengali', nativeName: 'বাংলা' },
+    { code: 'en', name: 'English', nativeName: 'English', flag: '🇬🇧' },
+    { code: 'hi', name: 'Hindi', nativeName: 'हिंदी', flag: '🇮🇳' },
+    { code: 'ta', name: 'Tamil', nativeName: 'தமிழ்', flag: '🇮🇳' },
+    { code: 'kn', name: 'Kannada', nativeName: 'ಕನ್ನಡ', flag: '🇮🇳' },
+    { code: 'te', name: 'Telugu', nativeName: 'తెలుగు', flag: '🇮🇳' },
+    { code: 'mr', name: 'Marathi', nativeName: 'मराठी', flag: '🇮🇳' },
+    { code: 'gu', name: 'Gujarati', nativeName: 'ગુજરાતી', flag: '🇮🇳' },
+    { code: 'bn', name: 'Bengali', nativeName: 'বাংলা', flag: '🇮🇳' },
   ];
 
   // Translations
@@ -558,110 +569,312 @@ const ProfileDetailsScreen = ({ workerType, selectedLanguage = 'English', onComp
   };
 
   const handleDocumentUpload = (docType) => {
-    // Placeholder for document upload functionality
-    Alert.alert('Document Upload', `Upload ${docType} functionality will be implemented`);
-    // In real implementation, use react-native-image-picker or similar
+    const options = {
+      mediaType: 'photo',
+      quality: 0.8,
+      maxWidth: 1024,
+      maxHeight: 1024,
+      includeBase64: true, // Include base64 for backend upload
+    };
+
+    launchImageLibrary(options, (response) => {
+      if (response.didCancel) {
+        console.log('User cancelled image picker');
+      } else if (response.errorCode) {
+        console.log('ImagePicker Error: ', response.errorMessage);
+        Alert.alert('Error', 'Failed to pick image. Please try again.');
+      } else if (response.assets && response.assets[0]) {
+        const asset = response.assets[0];
+        console.log('✅ Image selected:', asset.fileName);
+        
+        // Create document data with base64
+        const documentData = {
+          uri: asset.uri,
+          type: asset.type || 'image/jpeg',
+          name: asset.fileName || `${docType.replace(/\s/g, '_')}_${Date.now()}.jpg`,
+          base64: asset.base64 ? `data:${asset.type || 'image/jpeg'};base64,${asset.base64}` : null,
+        };
+        
+        // Update document in state
+        setFormData(prev => ({
+          ...prev,
+          documents: {
+            ...prev.documents,
+            [docType === 'Profile Photo' ? 'profilePhoto' : 
+             docType === 'Aadhar Card' ? 'aadharCard' : 
+             'panCard']: documentData
+          }
+        }));
+        
+        Alert.alert('Success', `${docType} uploaded successfully!`);
+      }
+    });
   };
 
   const handleQRScan = () => {
-    // Placeholder for QR code scanning
-    Alert.alert('QR Scanner', 'QR code scanner will open here');
-    // In real implementation, use react-native-camera or react-native-qrcode-scanner
+    // Mark QR as scanned
     setFormData(prev => ({
       ...prev,
       payment: { ...prev.payment, qrScanned: true }
     }));
+    
+    Alert.alert(
+      'QR Code Scanned ✅',
+      'Please complete the payment and enter the transaction details below.',
+      [{ text: 'OK' }]
+    );
+  };
+
+  // ✅ Real Google Pay Scanner Function
+  const openGooglePayScanner = () => {
+    const upiLink = 'upi://pay?pa=paasowork@paytm&pn=PaasoWork&am=499&cu=INR&tn=Registration%20Fee';
+    
+    Linking.canOpenURL(upiLink)
+      .then((supported) => {
+        if (supported) {
+          Linking.openURL(upiLink);
+          // Mark as scanned after opening
+          setTimeout(() => {
+            setFormData(prev => ({
+              ...prev,
+              payment: { ...prev.payment, qrScanned: true }
+            }));
+          }, 1000);
+        } else {
+          Alert.alert(
+            'UPI App Not Found',
+            'Please install a UPI app to make payment',
+            [{ text: 'OK' }]
+          );
+        }
+      })
+      .catch((err) => {
+        console.error('Error opening UPI app:', err);
+        Alert.alert('Error', 'Could not open payment app');
+      });
   };
 
   const handleTransactionScreenshot = () => {
-    // Placeholder for screenshot upload
-    Alert.alert('Upload Screenshot', 'Transaction screenshot upload will be implemented');
-    // In real implementation, use react-native-image-picker
+    const options = {
+      mediaType: 'photo',
+      quality: 0.8,
+      maxWidth: 1024,
+      maxHeight: 1024,
+      includeBase64: true, // Include base64 for backend upload
+    };
+
+    launchImageLibrary(options, (response) => {
+      if (response.didCancel) {
+        console.log('User cancelled image picker');
+      } else if (response.errorCode) {
+        console.log('ImagePicker Error: ', response.errorMessage);
+        Alert.alert('Error', 'Failed to pick image. Please try again.');
+      } else if (response.assets && response.assets[0]) {
+        const asset = response.assets[0];
+        console.log('✅ Transaction screenshot selected:', asset.fileName);
+        
+        // Create screenshot data with base64
+        const screenshotData = {
+          uri: asset.uri,
+          type: asset.type || 'image/jpeg',
+          name: asset.fileName || `payment_screenshot_${Date.now()}.jpg`,
+          base64: asset.base64 ? `data:${asset.type || 'image/jpeg'};base64,${asset.base64}` : null,
+        };
+        
+        setFormData(prev => ({
+          ...prev,
+          payment: {
+            ...prev.payment,
+            transactionScreenshot: screenshotData
+          }
+        }));
+        
+        Alert.alert('Success', 'Payment screenshot uploaded successfully! ✅');
+      }
+    });
   };
 
   const handleSubmit = async () => {
-    // Validation for Individual Worker
-    if (workerType === 'individual') {
-      if (!formData.name.trim()) {
-        Alert.alert('Required', 'Please enter your name');
-        return;
-      }
-      if (!formData.email.trim()) {
-        Alert.alert('Required', 'Please enter your email');
-        return;
-      }
-      if (!formData.mobile.trim() || formData.mobile.length < 10) {
-        Alert.alert('Required', 'Please enter a valid mobile number');
-        return;
-      }
-      if (!formData.password.trim() || formData.password.length < 6) {
-        Alert.alert('Required', 'Password must be at least 6 characters');
-        return;
-      }
-      if (!formData.payment.transactionNumber.trim()) {
-        Alert.alert('Required', 'Please enter transaction number');
-        return;
-      }
-    } else {
-      // Validation for other worker types
-      if (!formData.name.trim()) {
-        Alert.alert('Required', 'Please enter your name');
-        return;
-      }
-      
-      if ((workerType === 'service_provider' || workerType === 'contractor') && !formData.businessName.trim()) {
-        Alert.alert('Required', 'Please enter your business name');
-        return;
-      }
+    // Common validation for all worker types
+    if (!formData.name.trim()) {
+      Alert.alert('Required', 'Please enter your name');
+      return;
+    }
+    
+    if (!formData.email.trim()) {
+      Alert.alert('Required', 'Please enter your email');
+      return;
+    }
+    
+    // Email format validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(formData.email.trim())) {
+      Alert.alert('Invalid Email', 'Please enter a valid email address');
+      return;
+    }
+    
+    if (!formData.mobile.trim() || formData.mobile.length !== 10) {
+      Alert.alert('Required', 'Please enter a valid 10-digit mobile number');
+      return;
+    }
+    
+    if (!formData.password.trim() || formData.password.length < 6) {
+      Alert.alert('Required', 'Password must be at least 6 characters');
+      return;
+    }
 
-      if (!formData.skills.trim()) {
-        Alert.alert('Required', 'Please enter your skills');
-        return;
-      }
+    if (!formData.services.trim()) {
+      Alert.alert('Required', 'Please enter your services');
+      return;
+    }
 
-      if (!formData.serviceAreas.trim()) {
-        Alert.alert('Required', 'Please enter service areas');
-        return;
-      }
-
-      if (workerType === 'crew_leader' && !formData.teamSize.trim()) {
-        Alert.alert('Required', 'Please enter your team size');
-        return;
-      }
+    if (!formData.serviceAreas.trim()) {
+      Alert.alert('Required', 'Please enter service areas');
+      return;
+    }
+    
+    if (!formData.payment.transactionNumber.trim()) {
+      Alert.alert('Required', 'Please enter transaction number');
+      return;
     }
 
     // Register worker with backend
     setLoading(true);
     
     try {
+      console.log('🚀 Starting worker registration...');
+      
+      // Get FCM token for push notifications (non-blocking)
+      let fcmToken = null;
+      try {
+        console.log('📱 Getting FCM token...');
+        fcmToken = await getFCMToken();
+        if (fcmToken) {
+          console.log('✅ FCM Token obtained');
+        } else {
+          console.log('⚠️ FCM token not available, continuing without it');
+        }
+      } catch (error) {
+        console.log('⚠️ Failed to get FCM token, continuing registration:', error.message);
+        // Continue registration even if FCM fails
+      }
+      
+      // Prepare category - convert services string to array
+      let categoryArray = [];
+      if (formData.services && formData.services.trim()) {
+        // Split by comma and clean up
+        categoryArray = formData.services
+          .split(',')
+          .map(s => s.trim())
+          .filter(s => s.length > 0);
+      } else if (formData.skills && formData.skills.trim()) {
+        categoryArray = formData.skills
+          .split(',')
+          .map(s => s.trim())
+          .filter(s => s.length > 0);
+      }
+      
+      // If no categories, use General
+      if (categoryArray.length === 0) {
+        categoryArray = ['General'];
+      }
+
+      // ✅ Map frontend workerType to backend format
+      const workerTypeMapping = {
+        'individual': 'Worker',
+        'crew_leader': 'Crew / Team',
+        'contractor': 'Contractor',
+        'service_provider': 'Service Provider'
+      };
+      
+      const backendWorkerType = workerTypeMapping[workerType] || 'Worker';
+
       const workerData = {
-        name: formData.name,
-        email: formData.email,
-        mobile: formData.mobile,
+        name: formData.name.trim(),
+        email: formData.email.trim(),
+        mobile: formData.mobile.trim(),
         password: formData.password,
         languages: formData.selectedLanguages.length > 0 
           ? formData.selectedLanguages 
           : [selectedLanguage],
-        workerType: workerType,
-        category: formData.skills || formData.services,
-        serviceArea: formData.serviceAreas,
-        city: formData.serviceAreas.split(',')[0]?.trim() || '',
+        workerType: backendWorkerType, // ✅ Use mapped backend format
+        category: categoryArray,
+        serviceArea: formData.serviceAreas.trim(),
+        city: formData.serviceAreas.split(',')[0]?.trim() || 'Unknown',
         teamSize: formData.teamSize ? parseInt(formData.teamSize) : 1,
-        gstNumber: formData.gstNumber,
-        msmeNumber: formData.msmeNumber,
-        onboardingFee: formData.payment.transactionNumber,
+        gstNumber: formData.gstNumber?.trim() || '',
+        msmeNumber: formData.msmeNumber?.trim() || '',
+        onboardingFee: formData.payment.transactionNumber.trim(),
+        businessName: formData.businessName?.trim() || '',
+        availability: formData.availability || 'online', // Add availability status
+        online: formData.availability === 'online', // Set online status based on availability
+        fcmToken: fcmToken, // ✅ Add FCM token for push notifications
+        // Add documents with base64 data
+        profilePhoto: formData.documents.profilePhoto?.base64 || formData.documents.profilePhoto?.uri || null,
+        aadhaarDoc: formData.documents.aadharCard?.base64 || formData.documents.aadharCard?.uri || null,
+        panCard: formData.documents.panCard?.base64 || formData.documents.panCard?.uri || null,
+        // Add payment screenshot
+        paymentScreenshot: formData.payment.transactionScreenshot?.base64 || formData.payment.transactionScreenshot?.uri || null,
       };
+
+      console.log('📦 Worker Data:', JSON.stringify(workerData, null, 2));
 
       const response = await api.registerWorker(workerData);
       
+      console.log('✅ Registration Response:', response);
+      
       if (response.success) {
+        // Prepare complete worker data for navigation
+        const completeWorkerData = {
+          // Use data from backend response
+          _id: response.worker?._id,
+          name: response.worker?.name || formData.name,
+          email: response.worker?.email || formData.email,
+          mobile: response.worker?.mobile || formData.mobile,
+          workerType: workerType, // ✅ Keep frontend format (individual, crew_leader, etc.)
+          workerTypeBackend: response.worker?.workerType || backendWorkerType, // Backend format for reference
+          category: response.worker?.category || categoryArray,
+          serviceArea: response.worker?.serviceArea || formData.serviceAreas,
+          city: response.worker?.city || formData.serviceAreas.split(',')[0]?.trim() || 'Unknown',
+          languages: response.worker?.languages || (formData.selectedLanguages.length > 0 
+            ? formData.selectedLanguages 
+            : [selectedLanguage]),
+          selectedLanguages: response.worker?.languages || (formData.selectedLanguages.length > 0 
+            ? formData.selectedLanguages 
+            : [selectedLanguage]), // ✅ Also save as selectedLanguages for compatibility
+          status: response.worker?.status || 'Pending',
+          verified: response.worker?.verified || false,
+          kycVerified: response.worker?.kycVerified || false,
+          badges: response.worker?.badges || [],
+          registered: true,
+          // Use availability from response (backend saved value)
+          availability: response.worker?.availability || formData.availability || 'online',
+          online: response.worker?.online !== undefined ? response.worker.online : (formData.availability === 'online'),
+          // ✅ Add services for profile display
+          services: formData.services || categoryArray.join(', '),
+          serviceAreas: formData.serviceAreas,
+        };
+
+        console.log('📦 Complete Worker Data for Navigation:', completeWorkerData);
+
+        // Show success message with admin approval notice and FCM token info
+        const successMessage = fcmToken 
+          ? `Your registration ID is pending admin approval.\n\n✅ Push notifications enabled!\n\nYou will be notified once approved.`
+          : `Your registration ID is pending admin approval.\n\nPlease wait while we verify your details. You will be notified once approved.`;
+        
         Alert.alert(
-          'Registration Successful',
-          response.message || 'Your registration is pending admin approval. You will be notified once approved.',
+          'Registration Successful! ✅',
+          successMessage,
           [
             {
               text: 'OK',
-              onPress: () => onComplete({ ...formData, workerType, registered: true }),
+              onPress: () => {
+                console.log('✅ Navigating to dashboard...');
+                if (fcmToken) {
+                  console.log('📱 FCM Token registered with backend');
+                }
+                onComplete(completeWorkerData);
+              },
             },
           ]
         );
@@ -669,8 +882,84 @@ const ProfileDetailsScreen = ({ workerType, selectedLanguage = 'English', onComp
         Alert.alert('Registration Failed', response.message || 'Please try again');
       }
     } catch (error) {
-      console.error('Registration Error:', error);
-      Alert.alert('Error', error.message || 'Failed to register. Please try again.');
+      console.error('❌ Registration Error:', error);
+      
+      // Extract detailed error message
+      let errorMessage = 'Failed to register. Please try again.';
+      let isAlreadyRegistered = false;
+      
+      if (error.response?.data) {
+        const errorData = error.response.data;
+        
+        // Check if user is already registered
+        if (errorData.alreadyRegistered) {
+          isAlreadyRegistered = true;
+          errorMessage = errorData.message;
+          
+          // Show appropriate action based on status
+          if (errorData.status === 'Approved') {
+            Alert.alert(
+              'Already Registered',
+              errorMessage,
+              [
+                {
+                  text: 'Go to Login',
+                  onPress: () => onBack(), // Go back to login screen
+                },
+              ]
+            );
+            return;
+          } else if (errorData.status === 'Pending') {
+            // User already registered with pending status - take them to dashboard
+            Alert.alert(
+              'Registration Pending',
+              'Your registration is already submitted and pending approval. Taking you to dashboard...',
+              [
+                {
+                  text: 'OK',
+                  onPress: () => {
+                    // Create worker data from existing registration
+                    const existingWorkerData = {
+                      name: formData.name.trim(),
+                      email: formData.email.trim(),
+                      mobile: formData.mobile.trim(),
+                      workerType: workerType,
+                      category: formData.services.split(',').map(s => s.trim()).filter(s => s.length > 0),
+                      serviceArea: formData.serviceAreas.trim(),
+                      city: formData.serviceAreas.split(',')[0]?.trim() || 'Unknown',
+                      languages: formData.selectedLanguages.length > 0 
+                        ? formData.selectedLanguages 
+                        : [selectedLanguage],
+                      status: 'Pending',
+                      verified: false,
+                      kycVerified: false,
+                      registered: true,
+                    };
+                    onComplete(existingWorkerData);
+                  },
+                },
+              ]
+            );
+            return;
+          }
+        }
+        
+        // Handle validation errors
+        if (errorData.errors && Array.isArray(errorData.errors)) {
+          const errorMessages = errorData.errors.map(e => `• ${e.message || e.msg}`).join('\n');
+          errorMessage = `Validation Errors:\n${errorMessages}`;
+        } else if (errorData.message) {
+          errorMessage = errorData.message;
+        }
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      console.error('📋 Error Details:', errorMessage);
+      
+      if (!isAlreadyRegistered) {
+        Alert.alert('Registration Error', errorMessage);
+      }
     } finally {
       setLoading(false);
     }
@@ -764,20 +1053,14 @@ const ProfileDetailsScreen = ({ workerType, selectedLanguage = 'English', onComp
               </View>
 
               {/* Mobile Number */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>
-                  {t.mobileNumber} <Text style={styles.required}>{t.required}</Text>
-                </Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder={t.enterMobile}
-                  value={formData.mobile}
-                  onChangeText={(value) => updateField('mobile', value)}
-                  keyboardType="phone-pad"
-                  maxLength={10}
-                  placeholderTextColor="#94a3b8"
-                />
-              </View>
+              <PhoneInput
+                label={t.mobileNumber}
+                value={formData.mobile}
+                onChangeText={(value) => updateField('mobile', value)}
+                placeholder={t.enterMobile}
+                required={true}
+                requiredText={t.required}
+              />
 
               {/* Password */}
               <View style={styles.inputGroup}>
@@ -793,6 +1076,38 @@ const ProfileDetailsScreen = ({ workerType, selectedLanguage = 'English', onComp
                   placeholderTextColor="#94a3b8"
                 />
               </View>
+
+              {/* Services */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>
+                  {t.services} <Text style={styles.required}>{t.required}</Text>
+                </Text>
+                <TextInput
+                  style={[styles.input, styles.textArea]}
+                  placeholder={t.enterServices}
+                  value={formData.services}
+                  onChangeText={(value) => updateField('services', value)}
+                  placeholderTextColor="#94a3b8"
+                  multiline
+                  numberOfLines={3}
+                />
+              </View>
+
+              {/* Location */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>
+                  {t.location} <Text style={styles.required}>{t.required}</Text>
+                </Text>
+                <TextInput
+                  style={[styles.input, styles.textArea]}
+                  placeholder={t.enterLocation}
+                  value={formData.serviceAreas}
+                  onChangeText={(value) => updateField('serviceAreas', value)}
+                  placeholderTextColor="#94a3b8"
+                  multiline
+                  numberOfLines={2}
+                />
+              </View>
             </View>
 
             {/* Languages Card */}
@@ -801,12 +1116,12 @@ const ProfileDetailsScreen = ({ workerType, selectedLanguage = 'English', onComp
               <Text style={styles.cardSubtitle}>{t.selectLanguages}</Text>
 
               <TouchableOpacity
-                style={styles.languageSelector}
+                style={styles.languageToggleButton}
                 onPress={() => setShowLanguageMenu(!showLanguageMenu)}
                 activeOpacity={0.7}
               >
-                <Icon name="language" size={22} color={COLORS.primary} />
-                <Text style={styles.languageSelectorText}>
+                <Icon name="language" size={20} color={COLORS.primary} />
+                <Text style={styles.languageToggleText}>
                   {formData.selectedLanguages.length > 0
                     ? `${formData.selectedLanguages.length} ${t.languagesSelected}`
                     : t.selectLanguagesPlaceholder}
@@ -819,23 +1134,29 @@ const ProfileDetailsScreen = ({ workerType, selectedLanguage = 'English', onComp
               </TouchableOpacity>
 
               {showLanguageMenu && (
-                <View style={styles.languageList}>
+                <View style={styles.languageGridContainer}>
                   {availableLanguages.map((language) => {
                     const isSelected = formData.selectedLanguages.includes(language.name);
                     return (
                       <TouchableOpacity
                         key={language.code}
                         style={[
-                          styles.languageItem,
-                          isSelected && styles.languageItemSelected
+                          styles.languageCard,
+                          isSelected && styles.languageCardSelected
                         ]}
                         onPress={() => toggleLanguage(language.name)}
                         activeOpacity={0.7}
                       >
-                        <Text style={styles.languageName}>{language.name}</Text>
                         {isSelected && (
-                          <Icon name="checkmark-circle" size={22} color={COLORS.secondary} />
+                          <View style={styles.languageCheckmark}>
+                            <Icon name="checkmark-circle" size={20} color={COLORS.secondary} />
+                          </View>
                         )}
+                        <View style={styles.languageFlagContainer}>
+                          <Text style={styles.languageFlag}>{language.flag}</Text>
+                        </View>
+                        <Text style={styles.languageCardName}>{language.name}</Text>
+                        <Text style={styles.languageCardNative}>{language.nativeName}</Text>
                       </TouchableOpacity>
                     );
                   })}
@@ -843,15 +1164,11 @@ const ProfileDetailsScreen = ({ workerType, selectedLanguage = 'English', onComp
               )}
 
               {formData.selectedLanguages.length > 0 && (
-                <View style={styles.selectedLanguagesContainer}>
-                  {formData.selectedLanguages.map((lang, index) => (
-                    <View key={index} style={styles.selectedLanguageChip}>
-                      <Text style={styles.selectedLanguageText}>{lang}</Text>
-                      <TouchableOpacity onPress={() => toggleLanguage(lang)}>
-                        <Icon name="close-circle" size={18} color={COLORS.textSecondary} />
-                      </TouchableOpacity>
-                    </View>
-                  ))}
+                <View style={styles.selectedLanguagesInfo}>
+                  <Icon name="checkmark-circle" size={18} color={COLORS.secondary} />
+                  <Text style={styles.selectedLanguagesInfoText}>
+                    {formData.selectedLanguages.length} {t.languagesSelected}
+                  </Text>
                 </View>
               )}
             </View>
@@ -938,7 +1255,7 @@ const ProfileDetailsScreen = ({ workerType, selectedLanguage = 'English', onComp
                 </Text>
               </View>
 
-              {/* QR Code Section */}
+              {/* QR Code Section - Minimal & Clean */}
               <View style={styles.qrSection}>
                 <TouchableOpacity
                   style={styles.qrToggleButton}
@@ -958,24 +1275,16 @@ const ProfileDetailsScreen = ({ workerType, selectedLanguage = 'English', onComp
 
                 {showQRCode && (
                   <View style={styles.qrCodeContainer}>
-                    <View style={styles.qrCodePlaceholder}>
-                      <Icon name="qr-code" size={120} color={COLORS.primary} />
-                      <Text style={styles.qrCodeText}>{t.scanToPay}</Text>
+                    {/* ✅ Only QR Code - Clean & Simple */}
+                    <View style={styles.qrCodeBox}>
+                      <Image 
+                        source={{ 
+                          uri: `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent('upi://pay?pa=paasowork@paytm&pn=PaasoWork&am=499&cu=INR&tn=Registration Fee')}`
+                        }} 
+                        style={styles.qrCodeImage} 
+                        resizeMode="contain" 
+                      />
                     </View>
-                    <TouchableOpacity
-                      style={styles.scanButton}
-                      onPress={handleQRScan}
-                      activeOpacity={0.7}
-                    >
-                      <Icon name="scan" size={22} color={COLORS.white} />
-                      <Text style={styles.scanButtonText}>{t.scanQR}</Text>
-                    </TouchableOpacity>
-                    {formData.payment.qrScanned && (
-                      <View style={styles.successBadge}>
-                        <Icon name="checkmark-circle" size={20} color="#10b981" />
-                        <Text style={styles.successBadgeText}>{t.qrScanned}</Text>
-                      </View>
-                    )}
                   </View>
                 )}
               </View>
@@ -1063,20 +1372,14 @@ const ProfileDetailsScreen = ({ workerType, selectedLanguage = 'English', onComp
               </View>
 
               {/* Mobile Number */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>
-                  {t.mobileNumber} <Text style={styles.required}>{t.required}</Text>
-                </Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder={t.enterMobile}
-                  value={formData.mobile}
-                  onChangeText={(value) => updateField('mobile', value)}
-                  keyboardType="phone-pad"
-                  maxLength={10}
-                  placeholderTextColor="#94a3b8"
-                />
-              </View>
+              <PhoneInput
+                label={t.mobileNumber}
+                value={formData.mobile}
+                onChangeText={(value) => updateField('mobile', value)}
+                placeholder={t.enterMobile}
+                required={true}
+                requiredText={t.required}
+              />
 
               {/* Password */}
               <View style={styles.inputGroup}>
@@ -1160,12 +1463,12 @@ const ProfileDetailsScreen = ({ workerType, selectedLanguage = 'English', onComp
               <Text style={styles.cardSubtitle}>{t.selectLanguages}</Text>
 
               <TouchableOpacity
-                style={styles.languageSelector}
+                style={styles.languageToggleButton}
                 onPress={() => setShowLanguageMenu(!showLanguageMenu)}
                 activeOpacity={0.7}
               >
-               
-                <Text style={styles.languageSelectorText}>
+                <Icon name="language" size={20} color={COLORS.primary} />
+                <Text style={styles.languageToggleText}>
                   {formData.selectedLanguages.length > 0
                     ? `${formData.selectedLanguages.length} ${t.languagesSelected}`
                     : t.selectLanguagesPlaceholder}
@@ -1178,23 +1481,29 @@ const ProfileDetailsScreen = ({ workerType, selectedLanguage = 'English', onComp
               </TouchableOpacity>
 
               {showLanguageMenu && (
-                <View style={styles.languageList}>
+                <View style={styles.languageGridContainer}>
                   {availableLanguages.map((language) => {
                     const isSelected = formData.selectedLanguages.includes(language.name);
                     return (
                       <TouchableOpacity
                         key={language.code}
                         style={[
-                          styles.languageItem,
-                          isSelected && styles.languageItemSelected
+                          styles.languageCard,
+                          isSelected && styles.languageCardSelected
                         ]}
                         onPress={() => toggleLanguage(language.name)}
                         activeOpacity={0.7}
                       >
-                        <Text style={styles.languageName}>{language.name}</Text>
                         {isSelected && (
-                          <Icon name="checkmark-circle" size={22} color={COLORS.secondary} />
+                          <View style={styles.languageCheckmark}>
+                            <Icon name="checkmark-circle" size={20} color={COLORS.secondary} />
+                          </View>
                         )}
+                        <View style={styles.languageFlagContainer}>
+                          <Text style={styles.languageFlag}>{language.flag}</Text>
+                        </View>
+                        <Text style={styles.languageCardName}>{language.name}</Text>
+                        <Text style={styles.languageCardNative}>{language.nativeName}</Text>
                       </TouchableOpacity>
                     );
                   })}
@@ -1202,15 +1511,11 @@ const ProfileDetailsScreen = ({ workerType, selectedLanguage = 'English', onComp
               )}
 
               {formData.selectedLanguages.length > 0 && (
-                <View style={styles.selectedLanguagesContainer}>
-                  {formData.selectedLanguages.map((lang, index) => (
-                    <View key={index} style={styles.selectedLanguageChip}>
-                      <Text style={styles.selectedLanguageText}>{lang}</Text>
-                      <TouchableOpacity onPress={() => toggleLanguage(lang)}>
-                        <Icon name="close-circle" size={18} color={COLORS.textSecondary} />
-                      </TouchableOpacity>
-                    </View>
-                  ))}
+                <View style={styles.selectedLanguagesInfo}>
+                  <Icon name="checkmark-circle" size={18} color={COLORS.secondary} />
+                  <Text style={styles.selectedLanguagesInfoText}>
+                    {formData.selectedLanguages.length} {t.languagesSelected}
+                  </Text>
                 </View>
               )}
             </View>
@@ -1318,7 +1623,7 @@ const ProfileDetailsScreen = ({ workerType, selectedLanguage = 'English', onComp
                 {showQRCode && (
                   <View style={styles.qrCodeContainer}>
                     <View style={styles.qrCodePlaceholder}>
-                      <Icon name="qr-code" size={120} color={COLORS.primary} />
+                      <Image source={{ uri: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASwAAAEsCAIAAAD2HxkiAAAG8ElEQVR4nO3dQW7jOBRA0Z7F7H8XWcAsBuhBd6ckihTFR+qeRQCJ7SaAD/5IpNx+fn7+A/jL/377BYCfI4QQEUIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIgf8BJy/2LqzrYEYAAAAASUVORK5CYII=' }} style={styles.qrCodeImage} resizeMode="contain" />
                       <Text style={styles.qrCodeText}>{t.scanToPay}</Text>
                     </View>
                     <TouchableOpacity
@@ -1326,7 +1631,7 @@ const ProfileDetailsScreen = ({ workerType, selectedLanguage = 'English', onComp
                       onPress={handleQRScan}
                       activeOpacity={0.7}
                     >
-                      <Icon name="scan" size={22} color={COLORS.white} />
+                      <Icon name="scan" size={22} color={COLORS.black} />
                       <Text style={styles.scanButtonText}>{t.scanQR}</Text>
                     </TouchableOpacity>
                     {formData.payment.qrScanned && (
@@ -1378,8 +1683,10 @@ const ProfileDetailsScreen = ({ workerType, selectedLanguage = 'English', onComp
                 </TouchableOpacity>
               </View>
             </View>
+          </>
+        )}
 
-        {/* Availability Card */}
+        {/* Availability Card - For ALL Worker Types */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>🟢 {t.availabilityStatus}</Text>
           
@@ -1428,8 +1735,6 @@ const ProfileDetailsScreen = ({ workerType, selectedLanguage = 'English', onComp
             </Text>
           </View>
         </View>
-          </>
-        )}
 
         {/* Info Box */}
        
@@ -1512,12 +1817,12 @@ const styles = StyleSheet.create({
   typeDisplayCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: `${COLORS.accent}10`,
+    backgroundColor: '#d1fae5',
     padding: 16,
     borderRadius: 16,
     marginBottom: 16,
     borderWidth: 2,
-    borderColor: `${COLORS.accent}30`,
+    borderColor: '#86efac',
   },
   typeDisplayIcon: {
     fontSize: 40,
@@ -1575,7 +1880,35 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: COLORS.textPrimary,
     backgroundColor: COLORS.white,
-    height: 48,
+  },
+  phoneInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  countryCode: {
+    backgroundColor: '#fef3e2',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginRight: 12,
+    borderWidth: 2,
+    borderColor: '#fed7aa',
+  },
+  countryCodeText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+  },
+  phoneInput: {
+    flex: 1,
+    borderWidth: 2,
+    borderColor: COLORS.border,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: COLORS.textPrimary,
+    backgroundColor: COLORS.white,
   },
   textArea: {
     height: 48,
@@ -1689,6 +2022,22 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     marginTop: -8,
   },
+  languageToggleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 2,
+    borderColor: COLORS.border,
+    borderRadius: 12,
+    padding: 14,
+    backgroundColor: COLORS.white,
+  },
+  languageToggleText: {
+    flex: 1,
+    fontSize: 15,
+    color: COLORS.textPrimary,
+    fontWeight: '500',
+  },
   languageSelector: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1703,6 +2052,84 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 15,
     color: COLORS.textPrimary,
+  },
+  languageGridContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 12,
+  },
+  languageCard: {
+    width: '48%',
+    backgroundColor: COLORS.white,
+    borderRadius: 14,
+    padding: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: COLORS.border,
+    minHeight: 110,
+    position: 'relative',
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+  },
+  languageCardSelected: {
+    backgroundColor: '#e0f2fe',
+    borderColor: COLORS.primary,
+    borderWidth: 2.5,
+    elevation: 2,
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+  },
+  languageCheckmark: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    zIndex: 1,
+  },
+  languageFlagContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#f8fafc',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  languageFlag: {
+    fontSize: 32,
+  },
+  languageCardName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    marginBottom: 2,
+    textAlign: 'center',
+  },
+  languageCardNative: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  selectedLanguagesInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 12,
+    padding: 10,
+    backgroundColor: '#f0fdf4',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#bbf7d0',
+  },
+  selectedLanguagesInfoText: {
+    fontSize: 13,
+    color: COLORS.textPrimary,
+    fontWeight: '600',
   },
   languageList: {
     marginTop: 12,
@@ -1748,12 +2175,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: COLORS.secondary + '20',
+    backgroundColor: '#fef3e2',
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: COLORS.secondary + '40',
+    borderColor: '#fed7aa',
   },
   selectedLanguageText: {
     fontSize: 13,
@@ -1805,12 +2232,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   paymentInfoBox: {
-    backgroundColor: COLORS.secondary + '15',
+    backgroundColor: '#fef3e2',
     padding: 16,
     borderRadius: 14,
     marginBottom: 20,
     borderWidth: 2,
-    borderColor: COLORS.secondary + '30',
+    borderColor: '#fed7aa',
   },
   paymentInfoHeader: {
     flexDirection: 'row',
@@ -1860,8 +2287,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   qrCodePlaceholder: {
-    width: 200,
-    height: 200,
+    width: 250,
+    height: 250,
     backgroundColor: COLORS.white,
     borderRadius: 16,
     alignItems: 'center',
@@ -1874,6 +2301,35 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
+    padding: 15,
+  },
+  qrCodeImage: {
+    width: 220,
+    height: 220,
+    marginBottom: 10,
+  },
+  qrCodeImageContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  qrCodePattern: {
+    backgroundColor: COLORS.white,
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 10,
+  },
+  qrCodePatternText: {
+    fontSize: 10,
+    lineHeight: 12,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    color: '#000',
+    letterSpacing: 0,
+  },
+  qrCodeAmount: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: COLORS.primary,
+    marginTop: 8,
   },
   qrCodeText: {
     marginTop: 12,
@@ -1881,9 +2337,21 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: COLORS.primary,
   },
+  qrCodeHint: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginTop: 4,
+  },
+  qrActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 12,
+  },
   scanButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 10,
     backgroundColor: COLORS.primary,
     paddingHorizontal: 24,
@@ -1913,6 +2381,95 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
+  // ✅ Minimal QR Code Scanner - Only QR Image
+  qrCodeBox: {
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: COLORS.border,
+    padding: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 16,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  qrCodeImage: {
+    width: 250,
+    height: 250,
+  },
+  googlePayUPIText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  googlePayButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: '#4285f4',
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    marginTop: 16,
+    elevation: 4,
+    shadowColor: '#4285f4',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  googlePayButtonDisabled: {
+    backgroundColor: '#9ca3af',
+    elevation: 0,
+  },
+  googlePayButtonText: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  manualScanButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: 'transparent',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  manualScanText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: COLORS.textSecondary,
+  },
+  googlePaySuccessBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#d1fae5',
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: '#86efac',
+  },
+  googlePaySuccessText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#10b981',
+  },
   paymentInstructions: {
     backgroundColor: '#fef3c7',
     padding: 14,
@@ -1936,3 +2493,5 @@ const styles = StyleSheet.create({
 });
 
 export default ProfileDetailsScreen;
+
+

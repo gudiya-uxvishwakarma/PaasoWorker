@@ -1,3 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Paaso</string>
+    <string name="app_name">PaasoWork</string>
+    <string name="default_notification_channel_id">paaso_default_channel</string>
+    <string name="default_notification_channel_name">PaasoWork Notifications</string>
 </resources>

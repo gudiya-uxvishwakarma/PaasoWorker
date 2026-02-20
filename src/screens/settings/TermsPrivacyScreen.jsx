@@ -1,17 +1,61 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
   ScrollView, 
   TouchableOpacity, 
   StyleSheet,
-  StatusBar
+  StatusBar,
+  ActivityIndicator
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import COLORS from '../../constants/colors';
+import * as api from '../../services/api';
 
 const TermsPrivacyScreen = ({ onBack }) => {
   const [activeTab, setActiveTab] = useState('terms');
+  const [termsContent, setTermsContent] = useState(null);
+  const [privacyContent, setPrivacyContent] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchCMSContent();
+  }, []);
+
+  const fetchCMSContent = async () => {
+    try {
+      setLoading(true);
+      
+      // Fetch both terms and privacy content
+      const [termsResponse, privacyResponse] = await Promise.all([
+        api.getCMSContent('terms'),
+        api.getCMSContent('privacy')
+      ]);
+      
+      if (termsResponse.success) {
+        setTermsContent(termsResponse.content);
+      }
+      
+      if (privacyResponse.success) {
+        setPrivacyContent(privacyResponse.content);
+      }
+    } catch (error) {
+      console.error('❌ Fetch CMS Content Error:', error);
+      // Use default content if fetch fails
+      setTermsContent({
+        title: 'Terms of Service',
+        content: 'Terms and conditions content will be available soon.',
+        version: '1.0'
+      });
+      setPrivacyContent({
+        title: 'Privacy Policy',
+        content: 'Privacy policy content will be available soon.',
+        version: '1.0'
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -53,49 +97,20 @@ const TermsPrivacyScreen = ({ onBack }) => {
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {activeTab === 'terms' ? (
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={COLORS.primary} />
+            <Text style={styles.loadingText}>Loading content...</Text>
+          </View>
+        ) : activeTab === 'terms' ? (
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Terms of Service</Text>
-            <Text style={styles.lastUpdated}>Last updated: January 2025</Text>
-
-            <Text style={styles.heading}>1. Acceptance of Terms</Text>
-            <Text style={styles.paragraph}>
-              By accessing and using PaasoWork, you accept and agree to be bound by the terms and provision of this agreement.
+            <Text style={styles.sectionTitle}>{termsContent?.title || 'Terms of Service'}</Text>
+            <Text style={styles.lastUpdated}>
+              Version: {termsContent?.version || '1.0'} | Last updated: {termsContent?.updatedAt ? new Date(termsContent.updatedAt).toLocaleDateString() : 'January 2025'}
             </Text>
 
-            <Text style={styles.heading}>2. Use License</Text>
             <Text style={styles.paragraph}>
-              Permission is granted to temporarily use PaasoWork for personal, non-commercial transitory viewing only.
-            </Text>
-
-            <Text style={styles.heading}>3. User Accounts</Text>
-            <Text style={styles.paragraph}>
-              You are responsible for maintaining the confidentiality of your account and password. You agree to accept responsibility for all activities that occur under your account.
-            </Text>
-
-            <Text style={styles.heading}>4. Service Providers</Text>
-            <Text style={styles.paragraph}>
-              Workers registered on PaasoWork are independent contractors. PaasoWork does not employ workers directly and acts as a platform connecting workers with clients.
-            </Text>
-
-            <Text style={styles.heading}>5. Payment Terms</Text>
-            <Text style={styles.paragraph}>
-              All payments are processed through our secure payment gateway. PaasoWork charges a service fee on completed transactions as per the subscription plan.
-            </Text>
-
-            <Text style={styles.heading}>6. Prohibited Activities</Text>
-            <Text style={styles.paragraph}>
-              You may not use PaasoWork for any illegal or unauthorized purpose. You must not violate any laws in your jurisdiction.
-            </Text>
-
-            <Text style={styles.heading}>7. Termination</Text>
-            <Text style={styles.paragraph}>
-              We may terminate or suspend your account immediately, without prior notice, for conduct that we believe violates these Terms of Service.
-            </Text>
-
-            <Text style={styles.heading}>8. Limitation of Liability</Text>
-            <Text style={styles.paragraph}>
-              PaasoWork shall not be liable for any indirect, incidental, special, consequential or punitive damages resulting from your use of the service.
+              {termsContent?.content || 'Terms and conditions content will be available soon.'}
             </Text>
 
             <Text style={styles.heading}>9. Changes to Terms</Text>
@@ -110,17 +125,13 @@ const TermsPrivacyScreen = ({ onBack }) => {
           </View>
         ) : (
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>Privacy Policy</Text>
-            <Text style={styles.lastUpdated}>Last updated: January 2025</Text>
-
-            <Text style={styles.heading}>1. Information We Collect</Text>
-            <Text style={styles.paragraph}>
-              We collect information you provide directly to us, including name, phone number, email address, location, skills, and work preferences.
+            <Text style={styles.sectionTitle}>{privacyContent?.title || 'Privacy Policy'}</Text>
+            <Text style={styles.lastUpdated}>
+              Version: {privacyContent?.version || '1.0'} | Last updated: {privacyContent?.updatedAt ? new Date(privacyContent.updatedAt).toLocaleDateString() : 'January 2025'}
             </Text>
 
-            <Text style={styles.heading}>2. How We Use Your Information</Text>
             <Text style={styles.paragraph}>
-              We use the information we collect to provide, maintain, and improve our services, to process transactions, and to communicate with you.
+              {privacyContent?.content || 'Privacy policy content will be available soon.'}
             </Text>
 
             <Text style={styles.heading}>3. Information Sharing</Text>
@@ -282,6 +293,17 @@ const styles = StyleSheet.create({
   },
   bottomPadding: {
     height: 24,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 14,
+    color: COLORS.textSecondary,
   },
 });
 

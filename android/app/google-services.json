@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "743143303162",
+    "project_id": "paaso-app",
+    "storage_bucket": "paaso-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:743143303162:android:8d7d5842de3862e9b5e643",
+        "android_client_info": {
+          "package_name": "com.paasowork"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC41mv4_WR57C-gju_2kG5PjGjEboCRV-k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

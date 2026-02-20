@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -6,22 +6,65 @@ import {
   TouchableOpacity, 
   StyleSheet,
   StatusBar,
-  Linking
+  Linking,
+  Alert,
+  ActivityIndicator
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import COLORS from '../../constants/colors';
+import * as api from '../../services/api';
 
-const HelpSupportScreen = ({ onBack }) => {
+const HelpSupportScreen = ({ onBack, userData }) => {
+  const [loading, setLoading] = useState(true);
+  const [helpContent, setHelpContent] = useState(null);
+  
+  // Default support contact (fallback)
+  const defaultSupportMobile = '9876543210';
+  const defaultSupportEmail = 'support@paasowork.com';
+  
+  // Use backend data if available, otherwise use defaults
+  const supportMobile = helpContent?.supportMobile || defaultSupportMobile;
+  const supportEmail = helpContent?.supportEmail || defaultSupportEmail;
+
+  useEffect(() => {
+    loadHelpContent();
+  }, []);
+
+  const loadHelpContent = async () => {
+    try {
+      setLoading(true);
+      const response = await api.getCMSContent('help');
+      
+      if (response.success && response.content) {
+        // Parse content if it's JSON string
+        try {
+          const parsedContent = typeof response.content.content === 'string' 
+            ? JSON.parse(response.content.content)
+            : response.content.content;
+          setHelpContent(parsedContent);
+        } catch (e) {
+          console.log('Content is not JSON, using as is');
+          setHelpContent(response.content);
+        }
+      }
+    } catch (error) {
+      console.error('❌ Load Help Content Error:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
   const handleCall = () => {
-    Linking.openURL('tel:+911234567890');
+    Linking.openURL(`tel:+91${supportMobile}`);
   };
 
   const handleEmail = () => {
-    Linking.openURL('mailto:support@paasowork.com');
+    Linking.openURL(`mailto:${supportEmail}?subject=Support Request from ${userData?.name || 'Worker'}`);
   };
 
   const handleWhatsApp = () => {
-    Linking.openURL('whatsapp://send?phone=911234567890');
+    const message = `Hi, I need help with my PaasoWork account.\n\nName: ${userData?.name || 'N/A'}\nMobile: ${userData?.mobile || 'N/A'}`;
+    Linking.openURL(`whatsapp://send?phone=91${supportMobile}&text=${encodeURIComponent(message)}`);
   };
 
   return (
@@ -43,6 +86,13 @@ const HelpSupportScreen = ({ onBack }) => {
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={COLORS.primary} />
+            <Text style={styles.loadingText}>Loading help content...</Text>
+          </View>
+        ) : (
+          <>
         <View style={styles.card}>
           <View style={styles.cardTitleContainer}>
             <Icon name="headset" size={22} color={COLORS.accent} />
@@ -55,7 +105,7 @@ const HelpSupportScreen = ({ onBack }) => {
             </View>
             <View style={styles.contactInfo}>
               <Text style={styles.contactTitle}>Call Us</Text>
-              <Text style={styles.contactSubtitle}>+91 123 456 7890</Text>
+              <Text style={styles.contactSubtitle}>+91 {supportMobile}</Text>
             </View>
             <Icon name="chevron-forward" size={20} color={COLORS.border} />
           </TouchableOpacity>
@@ -66,7 +116,7 @@ const HelpSupportScreen = ({ onBack }) => {
             </View>
             <View style={styles.contactInfo}>
               <Text style={styles.contactTitle}>Email Support</Text>
-              <Text style={styles.contactSubtitle}>support@paasowork.com</Text>
+              <Text style={styles.contactSubtitle}>{supportEmail}</Text>
             </View>
             <Icon name="chevron-forward" size={20} color={COLORS.border} />
           </TouchableOpacity>
@@ -89,27 +139,62 @@ const HelpSupportScreen = ({ onBack }) => {
             <Text style={styles.cardTitle}>FAQs</Text>
           </View>
           
-          <TouchableOpacity style={styles.faqItem} activeOpacity={0.7}>
+          <TouchableOpacity 
+            style={styles.faqItem} 
+            activeOpacity={0.7}
+            onPress={() => Alert.alert(
+              'Get More Jobs',
+              '• Complete your profile with all details\n• Add professional photos\n• Keep your profile active\n• Respond quickly to job requests\n• Maintain good ratings\n• Subscribe to premium plan for priority listing'
+            )}
+          >
             <Icon name="chevron-forward" size={18} color={COLORS.accent} />
             <Text style={styles.faqText}>How do I get more jobs?</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.faqItem} activeOpacity={0.7}>
+          <TouchableOpacity 
+            style={styles.faqItem} 
+            activeOpacity={0.7}
+            onPress={() => Alert.alert(
+              'Payment Process',
+              '• Clients pay through the app\n• Payment is held securely\n• You receive payment after job completion\n• Payments are processed within 2-3 business days\n• Check payment history in your profile\n• Contact support for payment issues'
+            )}
+          >
             <Icon name="chevron-forward" size={18} color={COLORS.accent} />
             <Text style={styles.faqText}>How does payment work?</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.faqItem} activeOpacity={0.7}>
+          <TouchableOpacity 
+            style={styles.faqItem} 
+            activeOpacity={0.7}
+            onPress={() => Alert.alert(
+              'Account Verification',
+              '• Go to Profile > Verification\n• Upload required documents:\n  - Aadhaar Card\n  - PAN Card\n  - Professional certificates (if any)\n• Submit for verification\n• Verification takes 24-48 hours\n• You\'ll be notified once verified'
+            )}
+          >
             <Icon name="chevron-forward" size={18} color={COLORS.accent} />
             <Text style={styles.faqText}>How to verify my account?</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.faqItem} activeOpacity={0.7}>
+          <TouchableOpacity 
+            style={styles.faqItem} 
+            activeOpacity={0.7}
+            onPress={() => Alert.alert(
+              'Subscription Plans',
+              'Free Plan:\n• Basic profile listing\n• Limited job applications\n\nPremium Plan (₹299/month):\n• Priority listing\n• Unlimited job applications\n• Featured profile\n• Advanced analytics\n\nPro Plan (₹499/month):\n• All Premium features\n• Crew management\n• Multiple service areas\n• Dedicated support'
+            )}
+          >
             <Icon name="chevron-forward" size={18} color={COLORS.accent} />
             <Text style={styles.faqText}>What is subscription plan?</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.faqItem} activeOpacity={0.7}>
+          <TouchableOpacity 
+            style={styles.faqItem} 
+            activeOpacity={0.7}
+            onPress={() => Alert.alert(
+              'Crew Management',
+              '• Available for Crew Leaders and Contractors\n• Go to Profile > Manage Crew\n• Add crew members with their details\n• Assign roles and responsibilities\n• Track crew performance\n• Manage crew payments\n• Requires Pro subscription'
+            )}
+          >
             <Icon name="chevron-forward" size={18} color={COLORS.accent} />
             <Text style={styles.faqText}>How to manage my crew?</Text>
           </TouchableOpacity>
@@ -121,7 +206,23 @@ const HelpSupportScreen = ({ onBack }) => {
             <Text style={styles.cardTitle}>Resources</Text>
           </View>
           
-          <TouchableOpacity style={styles.resourceButton} activeOpacity={0.7}>
+          <TouchableOpacity 
+            style={styles.resourceButton} 
+            activeOpacity={0.7}
+            onPress={() => {
+              Alert.alert(
+                'Video Tutorials',
+                'Watch our video tutorials to learn how to use PaasoWork effectively.',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  { 
+                    text: 'Watch on YouTube', 
+                    onPress: () => Linking.openURL('https://youtube.com/@paasowork')
+                  }
+                ]
+              );
+            }}
+          >
             <View style={styles.resourceIconContainer}>
               <Icon name="play-circle" size={20} color={COLORS.accent} />
             </View>
@@ -129,7 +230,16 @@ const HelpSupportScreen = ({ onBack }) => {
             <Icon name="chevron-forward" size={20} color={COLORS.border} />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.resourceButton} activeOpacity={0.7}>
+          <TouchableOpacity 
+            style={styles.resourceButton} 
+            activeOpacity={0.7}
+            onPress={() => {
+              Alert.alert(
+                'User Guide',
+                'Complete guide to using PaasoWork:\n\n1. Complete your profile\n2. Add professional photos\n3. Set your service areas\n4. Browse and apply for jobs\n5. Communicate with clients\n6. Complete jobs and get paid\n7. Build your reputation with reviews\n\nFor detailed guide, visit our website.'
+              );
+            }}
+          >
             <View style={styles.resourceIconContainer}>
               <Icon name="document-text" size={20} color={COLORS.secondary} />
             </View>
@@ -137,7 +247,16 @@ const HelpSupportScreen = ({ onBack }) => {
             <Icon name="chevron-forward" size={20} color={COLORS.border} />
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.resourceButton} activeOpacity={0.7}>
+          <TouchableOpacity 
+            style={styles.resourceButton} 
+            activeOpacity={0.7}
+            onPress={() => {
+              Alert.alert(
+                'Tips & Best Practices',
+                '✓ Keep your profile updated\n✓ Respond to messages within 1 hour\n✓ Be professional in communication\n✓ Arrive on time for jobs\n✓ Complete jobs as promised\n✓ Ask for reviews after good work\n✓ Keep learning new skills\n✓ Maintain competitive pricing\n✓ Build long-term client relationships\n✓ Stay active on the platform'
+              );
+            }}
+          >
             <View style={styles.resourceIconContainer}>
               <Icon name="bulb" size={20} color="#f59e0b" />
             </View>
@@ -152,17 +271,51 @@ const HelpSupportScreen = ({ onBack }) => {
             <Text style={styles.cardTitle}>Feedback</Text>
           </View>
           
-          <TouchableOpacity style={styles.feedbackButton} activeOpacity={0.7}>
+          <TouchableOpacity 
+            style={styles.feedbackButton} 
+            activeOpacity={0.7}
+            onPress={() => {
+              Alert.alert(
+                'Rate Our App',
+                'Enjoying PaasoWork? Please rate us on the Play Store!',
+                [
+                  { text: 'Later', style: 'cancel' },
+                  { 
+                    text: 'Rate Now', 
+                    onPress: () => Linking.openURL('https://play.google.com/store/apps/details?id=com.paasowork')
+                  }
+                ]
+              );
+            }}
+          >
             <Icon name="star-outline" size={20} color={COLORS.accent} />
             <Text style={styles.feedbackButtonText}>Rate Our App</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.feedbackButton} activeOpacity={0.7}>
+          <TouchableOpacity 
+            style={styles.feedbackButton} 
+            activeOpacity={0.7}
+            onPress={() => {
+              const feedbackEmail = 'feedback@paasowork.com';
+              const subject = `Feedback from ${userData?.name || 'Worker'}`;
+              const body = `Name: ${userData?.name || 'N/A'}\nMobile: ${userData?.mobile || 'N/A'}\n\nMy Feedback:\n`;
+              Linking.openURL(`mailto:${feedbackEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`);
+            }}
+          >
             <Icon name="chatbubble-outline" size={20} color={COLORS.secondary} />
             <Text style={styles.feedbackButtonText}>Send Feedback</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.feedbackButton} activeOpacity={0.7}>
+          <TouchableOpacity 
+            style={styles.feedbackButton} 
+            activeOpacity={0.7}
+            onPress={() => {
+              const supportEmail = 'support@paasowork.com';
+              const subject = `Problem Report from ${userData?.name || 'Worker'}`;
+              const body = `Name: ${userData?.name || 'N/A'}\nMobile: ${userData?.mobile || 'N/A'}\n\nProblem Description:\n`;
+              Linking.openURL(`mailto:${supportEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`);
+            }}
+          >
             <Icon name="bug-outline" size={20} color="#dc2626" />
             <Text style={styles.feedbackButtonText}>Report a Problem</Text>
           </TouchableOpacity>
@@ -174,6 +327,8 @@ const HelpSupportScreen = ({ onBack }) => {
         </View>
 
         <View style={styles.bottomPadding} />
+        </>
+        )}
       </ScrollView>
     </View>
   );
@@ -347,6 +502,16 @@ const styles = StyleSheet.create({
   },
   bottomPadding: {
     height: 24,
+  },
+  loadingContainer: {
+    padding: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 14,
+    color: COLORS.textSecondary,
   },
 });
 

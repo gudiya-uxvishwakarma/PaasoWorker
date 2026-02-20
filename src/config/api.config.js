@@ -1,80 +1,48 @@
-/**
- * API Configuration
- * Update these values based on your environment
- */
 
-// Determine if running in development mode
 // Use typeof check to avoid errors when __DEV__ is not defined
 const IS_DEV = typeof __DEV__ !== 'undefined' ? __DEV__ : false;
 
-// Backend API URLs
+// Backend API URLs - Hybrid Configuration (Local + Render Fallback)
 const API_CONFIG = {
-  // Local backend (port 5000)
-  local: {
-    baseURL: 'http://10.0.2.2:5000/api', // Android Emulator
-    // baseURL: 'http://localhost:5000/api', // iOS Simulator
-    // baseURL: 'http://192.168.1.100:5000/api', // Physical Device (replace with your IP)
-  },
-  // Render production backend
-  render: {
-    baseURL: 'https://passo-backend.onrender.com/api',
-  },
+  BASE_URL: 'https://passo-backend.onrender.com/api', // Local backend on PC (primary)
+  TIMEOUT: 30000, // 30 seconds timeout
+  FALLBACK_URLS: [
+    'https://passo-backend.onrender.com/api', // Primary local URL
+    'https://passo-backend.onrender.com/api', // Fallback to Render production
+  ],
 };
 
 // Get current API base URL
 const getApiBaseUrl = () => {
-  // ⚙️ CHANGE THIS TO SWITCH BETWEEN LOCAL AND RENDER
-  
-  // Option 1: Use Local backend (Development) - CURRENTLY ACTIVE
-  return API_CONFIG.local.baseURL;
-  
-  // Option 2: Use Render backend (Production)
-  // return API_CONFIG.render.baseURL;
-  
-  // Option 3: Auto switch based on __DEV__
-  // return IS_DEV ? API_CONFIG.local.baseURL : API_CONFIG.render.baseURL;
+  return API_CONFIG.BASE_URL;
 };
 
 // API Endpoints
 const ENDPOINTS = {
-  // Auth
   AUTH: {
     WORKER_LOGIN: '/auth/worker/login',
     WORKER_REGISTER: '/auth/worker/register',
     LOGOUT: '/auth/logout',
+    VERIFY_OTP: '/auth/verify-otp',
+    SEND_OTP: '/auth/send-otp',
   },
-  
-  // Workers
-  WORKERS: {
-    CHECK_MOBILE: '/workers/check-mobile',
-    PROFILE: '/workers/me',
-    UPDATE_PROFILE: '/workers/me',
-    STATS: '/workers/me/stats',
-    STATUS: '/workers/me/status',
-    DASHBOARD: '/workers/dashboard',
-    LIST: '/workers',
-    BY_ID: (id) => `/workers/${id}`,
+  WORKER: {
+    CHECK_MOBILE: '/worker/check-mobile',
+    PROFILE: '/worker/me',
+    UPDATE_PROFILE: '/worker/me',
+    STATS: '/worker/me/stats',
+    STATUS: '/worker/me/status',
+    DASHBOARD: '/worker/dashboard',
+    LIST: '/worker',
+    BY_ID: (id) => `/worker/${id}`,
   },
-  
-  // Bookings
-  BOOKINGS: {
-    LIST: '/workers/bookings',
-    UPDATE: (id) => `/workers/bookings/${id}`,
-  },
-  
-  // Reviews
   REVIEWS: {
-    LIST: '/workers/me/reviews',
-  },
-  
-  // Earnings
-  EARNINGS: {
-    GET: '/workers/me/earnings',
+    LIST: '/worker/me/reviews',
   },
 };
 
 // Request timeout (in milliseconds)
-const REQUEST_TIMEOUT = 5000; // 5 seconds
+const REQUEST_TIMEOUT = API_CONFIG.TIMEOUT;
 
 // Storage keys
 const STORAGE_KEYS = {

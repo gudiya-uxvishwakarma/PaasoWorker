@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   View, 
   Text, 
@@ -6,12 +6,17 @@ import {
   TouchableOpacity, 
   StyleSheet, 
   Switch,
-  StatusBar
+  StatusBar,
+  RefreshControl,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import Svg, { Path, Circle, Rect, G, Text as SvgText } from 'react-native-svg';
 import COLORS from '../../constants/colors';
 import ScheduleModal from '../../components/ScheduleModal';
+import * as api from '../../services/api';
+import { useLanguage } from '../../context/LanguageContext';
 
 // Circular Progress Component
 const CircularProgress = ({ percentage, size = 100, strokeWidth = 8, color = COLORS.secondary }) => {
@@ -145,9 +150,121 @@ const MiniChart = ({ data, color, type = 'line' }) => {
 };
 
 const  DashboardScreen = ({ userData, onNavigate }) => {
+  // ✅ Use global language context for language persistence
+  const { selectedLanguage } = useLanguage();
+  
   const [availability, setAvailability] = useState('online');
   const [hideNumber, setHideNumber] = useState(false);
   const [scheduleModalVisible, setScheduleModalVisible] = useState(false);
+  const [dashboardData, setDashboardData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState(null);
+
+  // Log current language for debugging
+  useEffect(() => {
+    console.log('📱 Dashboard - Current Language:', selectedLanguage);
+  }, [selectedLanguage]);
+
+  // Fetch dashboard data on mount
+  useEffect(() => {
+    fetchDashboardData();
+  }, []);
+
+  const fetchDashboardData = async () => {
+    try {
+      setError(null);
+      
+      // If user data is available (from registration), use it directly
+      // This handles newly registered users who don't have auth token yet
+      if (userData && !dashboardData) {
+        console.log('📊 Using userData for dashboard (no auth token yet)');
+        setDashboardData({
+          worker: userData,
+          stats: {
+            totalUnlocks: 0,
+            rating: 0,
+            totalReviews: 0
+          }
+        });
+        // Set availability from userData
+        setAvailability(userData.availability || (userData.online ? 'online' : 'offline'));
+        setLoading(false);
+        return;
+      }
+      
+      console.log('📊 Fetching dashboard data from backend...');
+      const response = await api.getDashboardData();
+      
+      console.log('✅ Dashboard data received:', response);
+      
+      if (response.success) {
+        setDashboardData(response.data);
+        if (response.data.worker) {
+          // Set availability from backend data
+          const workerAvailability = response.data.worker.availability || 
+                                     (response.data.worker.online ? 'online' : 'offline');
+          setAvailability(workerAvailability);
+          console.log('📊 Availability set to:', workerAvailability);
+        }
+      }
+    } catch (err) {
+      console.error('❌ Dashboard Data Error:', err);
+      
+      // If error is due to authentication and we have userData, use it
+      if (err.message === 'SESSION_EXPIRED' && userData) {
+        console.log('📊 Auth error, using userData for dashboard');
+        setDashboardData({
+          worker: userData,
+          stats: {
+            totalUnlocks: 0,
+            rating: 0,
+            totalReviews: 0
+          }
+        });
+        setAvailability(userData.availability || (userData.online ? 'online' : 'offline'));
+      } else {
+        setError(err.message);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Pull to refresh handler
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await fetchDashboardData();
+    setRefreshing(false);
+  }, []);
+
+  // Update availability status
+  const updateAvailabilityStatus = async (status) => {
+    try {
+      console.log('🔄 Updating availability to:', status);
+      
+      // Check if user has auth token
+      const token = await api.getAuthToken();
+      if (!token) {
+        // No auth token - just update local state for newly registered users
+        console.log('⚠️ No auth token, updating local state only');
+        setAvailability(status);
+        Alert.alert('Note', 'Your profile is pending approval. Status will sync once approved.');
+        return;
+      }
+      
+      // Update both availability and online status
+      await api.updateAvailabilityStatus(status);
+      
+      setAvailability(status);
+      console.log('✅ Availability updated successfully to:', status);
+    } catch (err) {
+      console.error('❌ Update Status Error:', err);
+      // Just update local state if API fails
+      setAvailability(status);
+      Alert.alert('Note', 'Status updated locally. Will sync when you login.');
+    }
+  };
 
   const getAvailabilityColor = () => {
     switch (availability) {
@@ -157,6 +274,31 @@ const  DashboardScreen = ({ userData, onNavigate }) => {
       default: return '#6b7280';
     }
   };
+
+  // Show loading state
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.centerContent]}>
+        <StatusBar barStyle="light-content" backgroundColor={COLORS.primary} />
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={styles.loadingText}>Loading dashboard...</Text>
+      </View>
+    );
+  }
+
+  // Show error state
+  if (error && !dashboardData) {
+    return (
+      <View style={[styles.container, styles.centerContent]}>
+        <StatusBar barStyle="light-content" backgroundColor={COLORS.primary} />
+        <Icon name="alert-circle-outline" size={64} color={COLORS.textSecondary} />
+        <Text style={styles.errorText}>{error}</Text>
+        <TouchableOpacity style={styles.retryButton} onPress={fetchDashboardData}>
+          <Text style={styles.retryButtonText}>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -168,7 +310,9 @@ const  DashboardScreen = ({ userData, onNavigate }) => {
           <View style={styles.header}>
             <View style={styles.headerLeft}>
               <Text style={styles.greeting}>👋 Welcome back</Text>
-              <Text style={styles.userName}>{userData?.name || 'Worker'}</Text>
+              <Text style={styles.userName}>
+                {dashboardData?.worker?.name || userData?.name || 'Worker'}
+              </Text>
             </View>
             <TouchableOpacity 
               style={styles.profileButton}
@@ -185,6 +329,14 @@ const  DashboardScreen = ({ userData, onNavigate }) => {
         style={styles.content} 
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[COLORS.primary]}
+            tintColor={COLORS.primary}
+          />
+        }
       >
         {/* Modern Availability Toggle - Compact */}
         <View style={styles.availabilityCard}>
@@ -212,7 +364,7 @@ const  DashboardScreen = ({ userData, onNavigate }) => {
                     transform: [{ scale: 1.05 }],
                   },
                 ]}
-                onPress={() => setAvailability(status.key)}
+                onPress={() => updateAvailabilityStatus(status.key)}
                 activeOpacity={0.7}
               >
                 <Icon 
@@ -357,25 +509,6 @@ const  DashboardScreen = ({ userData, onNavigate }) => {
               <Icon name="arrow-forward" size={20} color={COLORS.textSecondary} />
             </View>
           </TouchableOpacity>
-
-          {userData?.workerType === 'crew_leader' && (
-            <TouchableOpacity 
-              style={styles.actionItemModern} 
-              activeOpacity={0.7}
-              onPress={() => onNavigate('teamManagement')}
-            >
-              <View style={[styles.actionIconModern, { backgroundColor: `${COLORS.primary}15` }]}>
-                <Icon name="people" size={24} color={COLORS.primary} />
-              </View>
-              <View style={styles.actionContent}>
-                <Text style={styles.actionTitle}>Manage Team</Text>
-                <Text style={styles.actionSubtitle}>Add or remove team members</Text>
-              </View>
-              <View style={styles.actionArrow}>
-                <Icon name="arrow-forward" size={20} color={COLORS.textSecondary} />
-              </View>
-            </TouchableOpacity>
-          )}
         </View>
 
         {/* Modern Privacy Card */}
@@ -985,6 +1118,35 @@ const styles = StyleSheet.create({
   
   bottomPadding: {
     height: 40,
+  },
+  centerContent: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: COLORS.textSecondary,
+    fontWeight: '600',
+  },
+  errorText: {
+    marginTop: 16,
+    fontSize: 16,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  retryButton: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 32,
+    paddingVertical: 14,
+    borderRadius: 12,
+  },
+  retryButtonText: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: '700',
   },
 });
 

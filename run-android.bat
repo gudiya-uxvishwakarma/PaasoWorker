@@ -1,13 +1,5 @@
 @echo off
-echo ========================================
-echo  PaasoWork - Run Android
-echo ========================================
-echo.
-
-echo Starting Android app...
-echo Make sure Metro bundler is running in another terminal!
-echo.
-
-npx react-native run-android
-
+echo Starting React Native Android build...
+cd /d "%~dp0"
+call npx react-native run-android
 pause

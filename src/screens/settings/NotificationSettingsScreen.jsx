@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -6,12 +6,14 @@ import {
   TouchableOpacity, 
   StyleSheet,
   StatusBar,
-  Switch
+  Switch,
+  ActivityIndicator
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import COLORS from '../../constants/colors';
+import * as api from '../../services/api';
 
-const NotificationSettingsScreen = ({ onBack }) => {
+const NotificationSettingsScreen = ({ onBack, userData }) => {
   const [pushEnabled, setPushEnabled] = useState(true);
   const [jobAlerts, setJobAlerts] = useState(true);
   const [messageAlerts, setMessageAlerts] = useState(true);
@@ -19,6 +21,101 @@ const NotificationSettingsScreen = ({ onBack }) => {
   const [promotions, setPromotions] = useState(false);
   const [emailNotifications, setEmailNotifications] = useState(true);
   const [smsNotifications, setSmsNotifications] = useState(false);
+  
+  const [notifications, setNotifications] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('settings'); // 'settings' or 'history'
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    loadPreferences();
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'history') {
+      fetchNotifications();
+    }
+  }, [activeTab]);
+
+  const loadPreferences = async () => {
+    try {
+      const response = await api.getNotificationPreferences();
+      if (response.success && response.preferences) {
+        const prefs = response.preferences;
+        setPushEnabled(prefs.pushEnabled ?? true);
+        setJobAlerts(prefs.jobAlerts ?? true);
+        setMessageAlerts(prefs.messageAlerts ?? true);
+        setPaymentAlerts(prefs.paymentAlerts ?? true);
+        setPromotions(prefs.promotions ?? false);
+        setEmailNotifications(prefs.emailNotifications ?? true);
+        setSmsNotifications(prefs.smsNotifications ?? false);
+      }
+    } catch (error) {
+      console.error('❌ Load Preferences Error:', error);
+    }
+  };
+
+  const savePreferences = async (key, value) => {
+    try {
+      setSaving(true);
+      const preferences = {
+        [key]: value
+      };
+      const response = await api.updateNotificationPreferences(preferences);
+      if (response.success) {
+        console.log('✅ Preferences saved');
+      }
+    } catch (error) {
+      console.error('❌ Save Preferences Error:', error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleToggle = (setter, key) => (value) => {
+    setter(value);
+    savePreferences(key, value);
+  };
+
+  const fetchNotifications = async () => {
+    try {
+      setLoading(true);
+      const workerId = userData?._id || userData?.id;
+      
+      if (!workerId) {
+        console.log('⚠️ No worker ID available');
+        setLoading(false);
+        return;
+      }
+      
+      const response = await api.getWorkerNotifications(workerId);
+      
+      if (response.success) {
+        setNotifications(response.notifications || []);
+      }
+    } catch (error) {
+      console.error('❌ Fetch Notifications Error:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleNotificationPress = async (notification) => {
+    try {
+      const workerId = userData?._id || userData?.id;
+      if (workerId && notification._id) {
+        await api.markNotificationRead(notification._id, workerId);
+      }
+      
+      // If notification has a link, you could open it here
+      if (notification.bannerLink) {
+        console.log('🔗 Opening link:', notification.bannerLink);
+        // Linking.openURL(notification.bannerLink);
+      }
+    } catch (error) {
+      console.error('❌ Mark Notification Read Error:', error);
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -38,7 +135,33 @@ const NotificationSettingsScreen = ({ onBack }) => {
         </View>
       </View>
 
+      {/* Tabs */}
+      <View style={styles.tabContainer}>
+        <TouchableOpacity 
+          style={[styles.tab, activeTab === 'settings' && styles.activeTab]}
+          onPress={() => setActiveTab('settings')}
+          activeOpacity={0.8}
+        >
+          <Icon name="settings-outline" size={18} color={activeTab === 'settings' ? COLORS.primary : COLORS.textSecondary} />
+          <Text style={[styles.tabText, activeTab === 'settings' && styles.activeTabText]}>
+            Settings
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.tab, activeTab === 'history' && styles.activeTab]}
+          onPress={() => setActiveTab('history')}
+          activeOpacity={0.8}
+        >
+          <Icon name="time-outline" size={18} color={activeTab === 'history' ? COLORS.primary : COLORS.textSecondary} />
+          <Text style={[styles.tabText, activeTab === 'history' && styles.activeTabText]}>
+            History
+          </Text>
+        </TouchableOpacity>
+      </View>
+
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {activeTab === 'settings' ? (
+          <>
         <View style={styles.card}>
           <View style={styles.cardTitleContainer}>
             <Icon name="notifications" size={22} color={COLORS.accent} />
@@ -55,9 +178,10 @@ const NotificationSettingsScreen = ({ onBack }) => {
             </View>
             <Switch
               value={pushEnabled}
-              onValueChange={setPushEnabled}
+              onValueChange={handleToggle(setPushEnabled, 'pushEnabled')}
               trackColor={{ false: COLORS.border, true: COLORS.accent }}
               thumbColor={COLORS.white}
+              disabled={saving}
             />
           </View>
         </View>
@@ -78,9 +202,10 @@ const NotificationSettingsScreen = ({ onBack }) => {
             </View>
             <Switch
               value={jobAlerts}
-              onValueChange={setJobAlerts}
+              onValueChange={handleToggle(setJobAlerts, 'jobAlerts')}
               trackColor={{ false: COLORS.border, true: COLORS.accent }}
               thumbColor={COLORS.white}
+              disabled={saving}
             />
           </View>
         </View>
@@ -101,9 +226,10 @@ const NotificationSettingsScreen = ({ onBack }) => {
             </View>
             <Switch
               value={messageAlerts}
-              onValueChange={setMessageAlerts}
+              onValueChange={handleToggle(setMessageAlerts, 'messageAlerts')}
               trackColor={{ false: COLORS.border, true: COLORS.accent }}
               thumbColor={COLORS.white}
+              disabled={saving}
             />
           </View>
         </View>
@@ -124,9 +250,10 @@ const NotificationSettingsScreen = ({ onBack }) => {
             </View>
             <Switch
               value={paymentAlerts}
-              onValueChange={setPaymentAlerts}
+              onValueChange={handleToggle(setPaymentAlerts, 'paymentAlerts')}
               trackColor={{ false: COLORS.border, true: COLORS.accent }}
               thumbColor={COLORS.white}
+              disabled={saving}
             />
           </View>
         </View>
@@ -147,9 +274,10 @@ const NotificationSettingsScreen = ({ onBack }) => {
             </View>
             <Switch
               value={promotions}
-              onValueChange={setPromotions}
+              onValueChange={handleToggle(setPromotions, 'promotions')}
               trackColor={{ false: COLORS.border, true: COLORS.accent }}
               thumbColor={COLORS.white}
+              disabled={saving}
             />
           </View>
         </View>
@@ -170,9 +298,10 @@ const NotificationSettingsScreen = ({ onBack }) => {
             </View>
             <Switch
               value={emailNotifications}
-              onValueChange={setEmailNotifications}
+              onValueChange={handleToggle(setEmailNotifications, 'emailNotifications')}
               trackColor={{ false: COLORS.border, true: COLORS.accent }}
               thumbColor={COLORS.white}
+              disabled={saving}
             />
           </View>
 
@@ -186,14 +315,62 @@ const NotificationSettingsScreen = ({ onBack }) => {
             </View>
             <Switch
               value={smsNotifications}
-              onValueChange={setSmsNotifications}
+              onValueChange={handleToggle(setSmsNotifications, 'smsNotifications')}
               trackColor={{ false: COLORS.border, true: COLORS.accent }}
               thumbColor={COLORS.white}
+              disabled={saving}
             />
           </View>
         </View>
 
         <View style={styles.bottomPadding} />
+        </>
+        ) : (
+          // Notification History Tab
+          loading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={COLORS.primary} />
+              <Text style={styles.loadingText}>Loading notifications...</Text>
+            </View>
+          ) : notifications.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Icon name="notifications-off-outline" size={64} color={COLORS.textSecondary} />
+              <Text style={styles.emptyText}>No notifications yet</Text>
+              <Text style={styles.emptySubtext}>You'll see notifications from admin here</Text>
+            </View>
+          ) : (
+            <View>
+              {notifications.map((notification, index) => (
+                <TouchableOpacity 
+                  key={notification._id || index} 
+                  style={styles.notificationCard}
+                  onPress={() => handleNotificationPress(notification)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.notificationHeader}>
+                    <Icon 
+                      name={notification.type === 'Banner' ? 'image-outline' : notification.type === 'Announcement' ? 'megaphone-outline' : 'notifications'} 
+                      size={20} 
+                      color={COLORS.primary} 
+                    />
+                    <Text style={styles.notificationTitle}>{notification.title}</Text>
+                  </View>
+                  <Text style={styles.notificationMessage}>{notification.message}</Text>
+                  {notification.type === 'Banner' && notification.bannerImage && (
+                    <View style={styles.bannerBadge}>
+                      <Icon name="image" size={12} color={COLORS.white} />
+                      <Text style={styles.bannerBadgeText}>Banner</Text>
+                    </View>
+                  )}
+                  <Text style={styles.notificationTime}>
+                    {new Date(notification.createdAt).toLocaleDateString()} at {new Date(notification.createdAt).toLocaleTimeString()}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+              <View style={styles.bottomPadding} />
+            </View>
+          )
+        )}
       </ScrollView>
     </View>
   );
@@ -295,6 +472,111 @@ const styles = StyleSheet.create({
   },
   bottomPadding: {
     height: 24,
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.surface,
+    marginHorizontal: 16,
+    marginTop: 16,
+    borderRadius: 12,
+    padding: 4,
+  },
+  tab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  activeTab: {
+    backgroundColor: COLORS.background,
+  },
+  tabText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.textSecondary,
+  },
+  activeTabText: {
+    color: COLORS.primary,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 14,
+    color: COLORS.textSecondary,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+  },
+  emptyText: {
+    marginTop: 16,
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+  },
+  emptySubtext: {
+    marginTop: 8,
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+  },
+  notificationCard: {
+    backgroundColor: COLORS.surface,
+    padding: 16,
+    marginHorizontal: 16,
+    marginTop: 12,
+    borderRadius: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: COLORS.primary,
+  },
+  notificationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  notificationTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    flex: 1,
+  },
+  notificationMessage: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  notificationTime: {
+    fontSize: 12,
+    color: COLORS.textLight,
+  },
+  bannerBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: COLORS.accent,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  bannerBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: COLORS.white,
   },
 });
 

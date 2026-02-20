@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,12 +12,22 @@ import {
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import COLORS from '../../constants/colors';
+import { useLanguage } from '../../context/LanguageContext';
 
 const CallsScreen = () => {
+  // ✅ Use global language context for language persistence
+  const { selectedLanguage } = useLanguage();
+  
   const [activeTab, setActiveTab] = useState('active');
   const [expandedJobId, setExpandedJobId] = useState(null);
   const [showWeekFilter, setShowWeekFilter] = useState(false);
   const [selectedWeek, setSelectedWeek] = useState('This Week');
+  
+  // Log current language for debugging
+  useEffect(() => {
+    console.log('📞 Calls - Current Language:', selectedLanguage);
+  }, [selectedLanguage]);
+  
   const [jobsData, setJobsData] = useState({
     active: [
       {

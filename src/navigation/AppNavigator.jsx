@@ -3,6 +3,7 @@ import { View, TouchableOpacity, Text, StyleSheet, ActivityIndicator } from 'rea
 import Icon from 'react-native-vector-icons/Ionicons';
 import LoginScreen from '../screens/auth/LoginScreen';
 import WorkerTypeSelectionScreen from '../screens/onboarding/WorkerTypeSelectionScreen';
+import LanguageSelectionScreen from '../screens/onboarding/LanguageSelectionScreen';
 import ProfileDetailsScreen from '../screens/onboarding/ProfileDetailsScreen';
 import OnboardingScreen from '../screens/onboarding/OnboardingScreen';
 import HomeScreen from '../screens/dashboard/DashboardScreen';
@@ -30,16 +31,7 @@ const AppNavigator = () => {
       return { required: true, screen: 'login', reason: 'No user data' };
     }
 
-    // Step 1: Check if KYC/Verification is pending
-    if (!userData.verified || !userData.kycVerified) {
-      return { 
-        required: true, 
-        screen: 'verification', 
-        reason: 'Verification pending' 
-      };
-    }
-
-    // Step 2: Check if worker type is selected
+    // Step 1: Check if worker type is selected
     if (!userData.workerType) {
       return { 
         required: true, 
@@ -48,10 +40,10 @@ const AppNavigator = () => {
       };
     }
 
-    // Step 3: Check if profile details are complete
+    // Step 2: Check if profile details are complete
     const hasBasicInfo = userData.name && userData.mobile;
-    const hasCategory = userData.category && userData.category.length > 0;
-    const hasLocation = userData.city && userData.serviceArea;
+    const hasCategory = userData.category && (Array.isArray(userData.category) ? userData.category.length > 0 : userData.category);
+    const hasLocation = userData.city || userData.serviceArea;
     
     if (!hasBasicInfo || !hasCategory || !hasLocation) {
       return { 
@@ -61,7 +53,11 @@ const AppNavigator = () => {
       };
     }
 
-    // All onboarding steps complete
+    // Step 3: After profile details are complete, go directly to dashboard
+    // Dashboard will show verification status (Pending/Approved/Rejected)
+    // No need to check verification here - let users see their dashboard
+    
+    // All onboarding steps complete - go to home/dashboard
     return { required: false, screen: 'home', reason: 'Onboarding complete' };
   };
 
@@ -148,6 +144,16 @@ const AppNavigator = () => {
             setUserData(updatedData);
             
             navigate('profileDetails');
+          }}
+          onNavigateToLanguage={() => navigate('languageSelection')}
+          onBack={goBack}
+        />;
+      case 'languageSelection':
+        return <LanguageSelectionScreen 
+          onComplete={(language) => {
+            setSelectedLanguage(language);
+            // Go back to worker type selection
+            goBack();
           }}
           onBack={goBack}
         />;
