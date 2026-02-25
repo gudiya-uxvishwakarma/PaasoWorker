@@ -80,7 +80,7 @@ const ProfileScreen = ({ userData, onNavigate, onBack, onLogout }) => {
     // ✅ Map backend format to frontend format
     const backendToFrontendMapping = {
       'Worker': 'individual',
-      'Crew / Team': 'crew_leader',
+      'Crew / Team': 'crew_Team',
       'Contractor': 'contractor',
       'Service Provider': 'service_provider'
     };
@@ -99,12 +99,12 @@ const ProfileScreen = ({ userData, onNavigate, onBack, onLogout }) => {
     
     const types = {
       individual: { icon: 'person', label: 'Individual Worker', color: COLORS.accent },
-      crew_leader: { icon: 'people', label: 'Crew Leader', color: COLORS.secondary },
+      crew_Team: { icon: 'people', label: 'Crew/Team', color: COLORS.secondary },
       contractor: { icon: 'construct', label: 'Contractor', color: COLORS.primary },
       service_provider: { icon: 'business', label: 'Service Provider', color: '#f59e0b' },
     };
     
-    const result = types[workerTypeKey] || { icon: 'person', label: 'Worker', color: COLORS.accent };
+    const result = types[workerTypeKey] || { icon: 'person', label: 'Individual Worker', color: COLORS.accent };
     console.log('✅ Final worker type info:', result);
     
     return result;
@@ -141,7 +141,7 @@ const ProfileScreen = ({ userData, onNavigate, onBack, onLogout }) => {
   const availabilityInfo = getAvailabilityInfo();
 
   if (currentScreen === 'notifications') {
-    return <NotificationSettingsScreen onBack={() => setCurrentScreen('profile')} />;
+    return <NotificationSettingsScreen onBack={() => setCurrentScreen('profile')} userData={userData} />;
   }
 
   if (currentScreen === 'privacy') {
@@ -326,19 +326,11 @@ const ProfileScreen = ({ userData, onNavigate, onBack, onLogout }) => {
             <Text style={styles.cardTitle}>Location / Service Areas</Text>
           </View>
           
-          <View style={styles.areasContainer}>
-            {(() => {
-              const serviceAreaData = userData?.serviceArea || userData?.serviceArea || '';
-              if (typeof serviceAreaData === 'string' && serviceAreaData) {
-                return serviceAreaData.split(',').map((area, index) => (
-                  <View key={index} style={styles.areaChip}>
-                    <Icon name="location" size={14} color={COLORS.primary} />
-                    <Text style={styles.areaText}>{area.trim()}</Text>
-                  </View>
-                ));
-              }
-              return null;
-            })()}
+          <View style={styles.locationBox}>
+            <Icon name="location" size={18} color={COLORS.primary} />
+            <Text style={styles.locationText}>
+              {userData?.serviceArea || 'Not specified'}
+            </Text>
           </View>
         </View>
 
@@ -853,6 +845,22 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: COLORS.accent,
     fontWeight: '500',
+  },
+  locationBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    backgroundColor: `${COLORS.primary}10`,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: `${COLORS.primary}30`,
+  },
+  locationText: {
+    flex: 1,
+    fontSize: 15,
+    color: COLORS.textPrimary,
+    lineHeight: 22,
   },
   areasContainer: {
     gap: 10,

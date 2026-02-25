@@ -41,14 +41,38 @@ const HelpSupportScreen = ({ onBack, userData }) => {
           const parsedContent = typeof response.content.content === 'string' 
             ? JSON.parse(response.content.content)
             : response.content.content;
-          setHelpContent(parsedContent);
+          
+          // If content is an object with supportMobile and supportEmail
+          if (typeof parsedContent === 'object' && parsedContent !== null) {
+            setHelpContent(parsedContent);
+          } else {
+            // If content is plain text, use defaults
+            setHelpContent({
+              supportMobile: defaultSupportMobile,
+              supportEmail: defaultSupportEmail
+            });
+          }
         } catch (e) {
-          console.log('Content is not JSON, using as is');
-          setHelpContent(response.content);
+          console.log('Content is not JSON, using defaults');
+          setHelpContent({
+            supportMobile: defaultSupportMobile,
+            supportEmail: defaultSupportEmail
+          });
         }
+      } else {
+        // Use defaults if no content found
+        setHelpContent({
+          supportMobile: defaultSupportMobile,
+          supportEmail: defaultSupportEmail
+        });
       }
     } catch (error) {
       console.error('❌ Load Help Content Error:', error);
+      // Use defaults on error
+      setHelpContent({
+        supportMobile: defaultSupportMobile,
+        supportEmail: defaultSupportEmail
+      });
     } finally {
       setLoading(false);
     }

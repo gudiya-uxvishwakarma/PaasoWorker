@@ -26,18 +26,36 @@ const TermsPrivacyScreen = ({ onBack }) => {
     try {
       setLoading(true);
       
+      console.log('📄 Fetching Terms and Privacy content from backend');
+      
       // Fetch both terms and privacy content
       const [termsResponse, privacyResponse] = await Promise.all([
         api.getCMSContent('terms'),
         api.getCMSContent('privacy')
       ]);
       
-      if (termsResponse.success) {
+      if (termsResponse.success && termsResponse.content) {
         setTermsContent(termsResponse.content);
+        console.log('✅ Terms content loaded');
+      } else {
+        console.log('⚠️ Using default terms content');
+        setTermsContent({
+          title: 'Terms of Service',
+          content: 'Terms and conditions content will be available soon.',
+          version: '1.0'
+        });
       }
       
-      if (privacyResponse.success) {
+      if (privacyResponse.success && privacyResponse.content) {
         setPrivacyContent(privacyResponse.content);
+        console.log('✅ Privacy content loaded');
+      } else {
+        console.log('⚠️ Using default privacy content');
+        setPrivacyContent({
+          title: 'Privacy Policy',
+          content: 'Privacy policy content will be available soon.',
+          version: '1.0'
+        });
       }
     } catch (error) {
       console.error('❌ Fetch CMS Content Error:', error);

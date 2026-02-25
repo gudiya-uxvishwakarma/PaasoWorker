@@ -108,8 +108,25 @@ export const getFCMToken = async (retries = 3, delay = 2000) => {
 /**
  * Register FCM token with backend
  */
-export const registerFCMToken = async (userId, token) => {
+export const registerFCMToken = async (userId, token = null) => {
   try {
+    console.log('📤 Registering FCM token with backend...');
+    console.log('   User ID:', userId);
+    
+    // If token not provided, get it
+    let fcmToken = token;
+    if (!fcmToken) {
+      console.log('   Token not provided, fetching...');
+      fcmToken = await getFCMToken();
+    }
+    
+    if (!fcmToken) {
+      console.error('❌ No FCM token available');
+      return false;
+    }
+    
+    console.log('   Token preview:', fcmToken.substring(0, 30) + '...');
+    
     const response = await fetch(`${API_BASE_URL}/api/workers/fcm-token`, {
       method: 'POST',
       headers: {
@@ -117,19 +134,29 @@ export const registerFCMToken = async (userId, token) => {
       },
       body: JSON.stringify({
         userId,
-        fcmToken: token,
+        fcmToken,
         platform: Platform.OS,
       }),
     });
 
+    const data = await response.json();
+    
     if (!response.ok) {
-      throw new Error('Failed to register FCM token');
+      console.error('❌ Backend returned error:', data.message);
+      throw new Error(data.message || 'Failed to register FCM token');
     }
 
-    console.log('✅ FCM token registered with backend');
+    console.log('✅ FCM token registered with backend successfully');
+    console.log('   Response:', data.message);
+    
+    // Store registration status locally
+    await AsyncStorage.setItem('@fcm_registered', 'true');
+    await AsyncStorage.setItem('@fcm_user_id', userId);
+    await AsyncStorage.setItem('@fcm_token_last_sent', new Date().toISOString());
+    
     return true;
   } catch (error) {
-    console.error('❌ Failed to register FCM token:', error);
+    console.error('❌ Failed to register FCM token:', error.message);
     return false;
   }
 };
@@ -196,33 +223,192 @@ export const initializeFCM = async () => {
 /**
  * Setup notification handlers
  */
-export const setupNotificationHandlers = () => {
-  // Foreground message handler
-  messaging().onMessage(async remoteMessage => {
-    console.log('📩 Foreground notification:', remoteMessage);
+export const setupNotificationHandlers = (navigationRef = null) => {
+  console.log('🔔 Setting up notification handlers...');
+  
+  // ✅ FOREGROUND: When app is open and active
+  const unsubscribeForeground = messaging().onMessage(async remoteMessage => {
+    console.log('📩 FOREGROUND notification received:', remoteMessage);
+    console.log('   Title:', remoteMessage.notification?.title || remoteMessage.data?.title);
+    console.log('   Body:', remoteMessage.notification?.body || remoteMessage.data?.body);
+    console.log('   Data:', remoteMessage.data);
     
-    // Show local notification or custom UI
+    // Save notification to local storage for history
+    await saveNotificationToHistory(remoteMessage);
+    
+    // Extract title and body from notification or data payload
+    const title = remoteMessage.notification?.title || remoteMessage.data?.title || 'New Notification';
+    const body = remoteMessage.notification?.body || remoteMessage.data?.body || '';
+    
+    // Show alert dialog for foreground notifications
     Alert.alert(
-      remoteMessage.notification?.title || 'New Notification',
-      remoteMessage.notification?.body || '',
+      title,
+      body,
+      [
+        {
+          text: 'Dismiss',
+          style: 'cancel'
+        },
+        {
+          text: 'View',
+          onPress: () => handleNotificationNavigation(remoteMessage.data, navigationRef)
+        }
+      ],
+      { cancelable: true }
     );
+    
+    console.log('✅ Foreground notification displayed');
   });
 
-  // Background/Quit state notification handler
-  messaging().onNotificationOpenedApp(remoteMessage => {
-    console.log('📱 Notification opened app:', remoteMessage);
+  // ✅ BACKGROUND: App opened from notification (background state)
+  const unsubscribeBackground = messaging().onNotificationOpenedApp(remoteMessage => {
+    console.log('📱 BACKGROUND: Notification opened app from background:', remoteMessage);
+    console.log('   Title:', remoteMessage.notification?.title || remoteMessage.data?.title);
+    console.log('   Body:', remoteMessage.notification?.body || remoteMessage.data?.body);
+    console.log('   Data:', remoteMessage.data);
+    
+    // Save notification to history
+    saveNotificationToHistory(remoteMessage);
+    
     // Handle navigation based on notification data
+    handleNotificationNavigation(remoteMessage.data, navigationRef);
   });
 
-  // Check if app was opened from a notification (quit state)
+  // ✅ TERMINATED: App opened from notification (quit/terminated state)
   messaging()
     .getInitialNotification()
     .then(remoteMessage => {
       if (remoteMessage) {
-        console.log('🚀 App opened from notification:', remoteMessage);
+        console.log('🚀 TERMINATED: App opened from notification (terminated state):', remoteMessage);
+        console.log('   Title:', remoteMessage.notification?.title || remoteMessage.data?.title);
+        console.log('   Body:', remoteMessage.notification?.body || remoteMessage.data?.body);
+        console.log('   Data:', remoteMessage.data);
+        
+        // Save notification to history
+        saveNotificationToHistory(remoteMessage);
+        
         // Handle navigation based on notification data
+        setTimeout(() => {
+          handleNotificationNavigation(remoteMessage.data, navigationRef);
+        }, 2000); // Delay to ensure navigation is ready
       }
     });
+  
+  console.log('✅ Notification handlers setup complete');
+  console.log('   - Foreground: Alert dialog');
+  console.log('   - Background: System notification → Navigation');
+  console.log('   - Terminated: System notification → Navigation');
+  
+  // Return cleanup function
+  return () => {
+    unsubscribeForeground();
+    unsubscribeBackground();
+  };
+};
+
+/**
+ * Save notification to local history
+ */
+const saveNotificationToHistory = async (remoteMessage) => {
+  try {
+    const notification = {
+      id: remoteMessage.messageId,
+      title: remoteMessage.notification?.title || 'Notification',
+      body: remoteMessage.notification?.body || '',
+      data: remoteMessage.data || {},
+      receivedAt: new Date().toISOString(),
+      read: false
+    };
+    
+    // Get existing notifications
+    const existingNotifications = await AsyncStorage.getItem('@notifications_history');
+    const notifications = existingNotifications ? JSON.parse(existingNotifications) : [];
+    
+    // Add new notification at the beginning
+    notifications.unshift(notification);
+    
+    // Keep only last 100 notifications
+    const trimmedNotifications = notifications.slice(0, 100);
+    
+    // Save back to storage
+    await AsyncStorage.setItem('@notifications_history', JSON.stringify(trimmedNotifications));
+    
+    console.log('✅ Notification saved to history');
+  } catch (error) {
+    console.error('❌ Failed to save notification to history:', error);
+  }
+};
+
+/**
+ * Handle notification navigation based on data payload
+ */
+const handleNotificationNavigation = (data, navigationRef) => {
+  if (!data || !navigationRef) {
+    console.log('⚠️ No navigation data or ref available');
+    return;
+  }
+  
+  try {
+    console.log('🧭 Handling notification navigation:', data);
+    
+    // Navigate based on notification type
+    if (data.type === 'job_alert' && data.job_id) {
+      navigationRef.navigate('JobDetails', { jobId: data.job_id });
+    } else if (data.type === 'message' && data.chat_id) {
+      navigationRef.navigate('Chat', { chatId: data.chat_id });
+    } else if (data.type === 'payment' && data.payment_id) {
+      navigationRef.navigate('PaymentDetails', { paymentId: data.payment_id });
+    } else if (data.screen) {
+      // Generic screen navigation
+      navigationRef.navigate(data.screen, data.params ? JSON.parse(data.params) : {});
+    } else {
+      // Default: navigate to notifications screen
+      navigationRef.navigate('Notifications');
+    }
+  } catch (error) {
+    console.error('❌ Navigation error:', error);
+  }
+};
+
+/**
+ * Get notification history from local storage
+ */
+export const getNotificationHistory = async () => {
+  try {
+    const notifications = await AsyncStorage.getItem('@notifications_history');
+    return notifications ? JSON.parse(notifications) : [];
+  } catch (error) {
+    console.error('❌ Failed to get notification history:', error);
+    return [];
+  }
+};
+
+/**
+ * Mark notification as read
+ */
+export const markNotificationAsRead = async (notificationId) => {
+  try {
+    const notifications = await getNotificationHistory();
+    const updatedNotifications = notifications.map(notif => 
+      notif.id === notificationId ? { ...notif, read: true } : notif
+    );
+    await AsyncStorage.setItem('@notifications_history', JSON.stringify(updatedNotifications));
+    console.log('✅ Notification marked as read');
+  } catch (error) {
+    console.error('❌ Failed to mark notification as read:', error);
+  }
+};
+
+/**
+ * Clear all notifications
+ */
+export const clearNotificationHistory = async () => {
+  try {
+    await AsyncStorage.removeItem('@notifications_history');
+    console.log('✅ Notification history cleared');
+  } catch (error) {
+    console.error('❌ Failed to clear notification history:', error);
+  }
 };
 
 /**

@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { View, TouchableOpacity, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import LoginScreen from '../screens/auth/LoginScreen';
+import OTPVerifyScreen from '../screens/auth/OTPVerifyScreen';
 import WorkerTypeSelectionScreen from '../screens/onboarding/WorkerTypeSelectionScreen';
 import LanguageSelectionScreen from '../screens/onboarding/LanguageSelectionScreen';
+import CitySelectionScreen from '../screens/onboarding/CitySelectionScreen';
 import ProfileDetailsScreen from '../screens/onboarding/ProfileDetailsScreen';
 import OnboardingScreen from '../screens/onboarding/OnboardingScreen';
 import HomeScreen from '../screens/dashboard/DashboardScreen';
@@ -19,6 +21,7 @@ const AppNavigator = () => {
   const [userData, setUserData] = useState(null);
   const [selectedWorkerType, setSelectedWorkerType] = useState(null);
   const [selectedLanguage, setSelectedLanguage] = useState('English');
+  const [selectedCity, setSelectedCity] = useState(null);
   const [navigationHistory, setNavigationHistory] = useState(['login']);
   const [activeTab, setActiveTab] = useState('dashboard');
 
@@ -126,32 +129,65 @@ const AppNavigator = () => {
               setUserData({ phoneNumber });
               navigate('workerTypeSelection');
             }}
+            onNavigateToOTPVerify={(mobile, otp) => {
+              // Navigate to OTP verify screen
+              navigate('otpVerify', { mobile, generatedOTP: otp });
+            }}
+          />
+        );
+      case 'otpVerify':
+        return (
+          <OTPVerifyScreen
+            route={{ params: userData }}
+            navigation={{
+              goBack: () => goBack(),
+              navigate: (screen, params) => navigate(screen, params),
+              reset: ({ routes }) => {
+                if (routes && routes[0]) {
+                  navigate(routes[0].name);
+                }
+              }
+            }}
           />
         );
       case 'workerTypeSelection':
         return <WorkerTypeSelectionScreen 
           userData={userData}
-          onComplete={(type, language) => {
+          selectedCity={selectedCity}
+          onComplete={(type, language, city) => {
             setSelectedWorkerType(type);
             setSelectedLanguage(language);
+            setSelectedCity(city);
             
-            // Update user data with worker type
+            // Update user data with worker type and city
             const updatedData = { 
               ...userData, 
               workerType: type,
-              languages: [language]
+              languages: [language],
+              city: city
             };
             setUserData(updatedData);
             
             navigate('profileDetails');
           }}
           onNavigateToLanguage={() => navigate('languageSelection')}
+          onNavigateToCity={() => navigate('citySelection')}
           onBack={goBack}
         />;
       case 'languageSelection':
         return <LanguageSelectionScreen 
           onComplete={(language) => {
             setSelectedLanguage(language);
+            // Go back to worker type selection
+            goBack();
+          }}
+          onBack={goBack}
+        />;
+      case 'citySelection':
+        return <CitySelectionScreen 
+          selectedCity={selectedCity}
+          onComplete={(city) => {
+            setSelectedCity(city);
             // Go back to worker type selection
             goBack();
           }}

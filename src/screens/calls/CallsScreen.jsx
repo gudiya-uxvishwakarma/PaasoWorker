@@ -9,12 +9,13 @@ import {
   Modal,
   Linking,
   Alert,
+  TextInput,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import COLORS from '../../constants/colors';
 import { useLanguage } from '../../context/LanguageContext';
 
-const CallsScreen = () => {
+const CallsScreen = ({ navigation }) => {
   // ✅ Use global language context for language persistence
   const { selectedLanguage } = useLanguage();
   
@@ -22,6 +23,9 @@ const CallsScreen = () => {
   const [expandedJobId, setExpandedJobId] = useState(null);
   const [showWeekFilter, setShowWeekFilter] = useState(false);
   const [selectedWeek, setSelectedWeek] = useState('This Week');
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [selectedCancelReason, setSelectedCancelReason] = useState('');
+  const [jobToCancel, setJobToCancel] = useState(null);
   
   // Log current language for debugging
   useEffect(() => {
@@ -86,8 +90,34 @@ const CallsScreen = () => {
         requirements: 'AC installation kit, drilling machine',
       },
     ],
-    cancelled: [],
+    cancelled: [
+      {
+        id: 5,
+        title: 'Painting Work',
+        customer: 'Neha Singh',
+        location: 'Rohini, Delhi',
+        date: 'Yesterday, 11:00 AM',
+        status: 'cancelled',
+        payment: '₹4,000',
+        description: 'Room painting and wall preparation work.',
+        duration: '4-5 hours',
+        phone: '+91 98765 43214',
+        requirements: 'Painting tools, brushes, paint',
+        cancelledDate: new Date().toLocaleDateString(),
+        cancelledTime: new Date().toLocaleTimeString(),
+        cancelReason: 'Schedule conflict',
+        cancelledBy: 'Worker'
+      },
+    ],
   });
+
+  const cancelReasons = [
+    { id: 1, label: 'Too far location', icon: 'location-outline' },
+    { id: 2, label: 'Not available', icon: 'time-outline' },
+    { id: 3, label: 'Schedule conflict', icon: 'calendar-outline' },
+    { id: 4, label: 'Job not suitable', icon: 'close-circle-outline' },
+    { id: 5, label: 'Other', icon: 'ellipsis-horizontal-outline' },
+  ];
 
   const weekOptions = [
     'This Week',
@@ -138,7 +168,7 @@ const CallsScreen = () => {
           onPress: () => {
             setJobsData(prevData => {
               const updatedActive = prevData.active.map(job =>
-                job.id === jobId ? { ...job, status: 'scheduled' } : job
+                job.id === jobId ? { ...job, status: 'accepted' } : job
               );
               return { ...prevData, active: updatedActive };
             });
@@ -149,37 +179,69 @@ const CallsScreen = () => {
     );
   };
 
-  const handleRejectJob = (jobId, jobTitle) => {
+  const handleStartJob = (jobId, jobTitle) => {
     Alert.alert(
-      'Reject Job',
-      `Are you sure you want to reject "${jobTitle}"?`,
+      'Start Job',
+      `Are you ready to start "${jobTitle}"?`,
       [
         {
           text: 'Cancel',
           style: 'cancel',
         },
         {
-          text: 'Reject',
-          style: 'destructive',
+          text: 'Start',
           onPress: () => {
             setJobsData(prevData => {
-              const jobToCancel = prevData.active.find(job => job.id === jobId);
-              if (jobToCancel) {
-                const updatedActive = prevData.active.filter(job => job.id !== jobId);
-                const cancelledJob = { ...jobToCancel, status: 'cancelled', cancelledDate: new Date().toLocaleDateString() };
-                return {
-                  ...prevData,
-                  active: updatedActive,
-                  cancelled: [...prevData.cancelled, cancelledJob],
-                };
-              }
-              return prevData;
+              const updatedActive = prevData.active.map(job =>
+                job.id === jobId ? { ...job, status: 'in_progress' } : job
+              );
+              return { ...prevData, active: updatedActive };
             });
-            Alert.alert('Job Rejected', 'The job has been moved to cancelled.');
+            Alert.alert('Job Started', 'Job is now in progress!');
           },
         },
       ]
     );
+  };
+
+  const handleRejectJob = (jobId, jobTitle) => {
+    setJobToCancel({ id: jobId, title: jobTitle });
+    setShowCancelModal(true);
+  };
+
+  const confirmCancelJob = () => {
+    if (!selectedCancelReason) {
+      Alert.alert('Required', 'Please select a cancellation reason');
+      return;
+    }
+
+    if (jobToCancel) {
+      setJobsData(prevData => {
+        const job = prevData.active.find(j => j.id === jobToCancel.id);
+        if (job) {
+          const updatedActive = prevData.active.filter(j => j.id !== jobToCancel.id);
+          const cancelledJob = { 
+            ...job, 
+            status: 'cancelled', 
+            cancelledDate: new Date().toLocaleDateString(),
+            cancelledTime: new Date().toLocaleTimeString(),
+            cancelReason: selectedCancelReason,
+            cancelledBy: 'Worker'
+          };
+          return {
+            ...prevData,
+            active: updatedActive,
+            cancelled: [...prevData.cancelled, cancelledJob],
+          };
+        }
+        return prevData;
+      });
+      
+      setShowCancelModal(false);
+      setSelectedCancelReason('');
+      setJobToCancel(null);
+      Alert.alert('Job Cancelled', 'The job has been moved to cancelled.');
+    }
   };
 
   const handleMarkComplete = (jobId, jobTitle) => {
@@ -195,10 +257,17 @@ const CallsScreen = () => {
           text: 'Complete',
           onPress: () => {
             setJobsData(prevData => {
-              const jobToComplete = prevData.active.find(job => job.id === jobId);
-              if (jobToComplete) {
-                const updatedActive = prevData.active.filter(job => job.id !== jobId);
-                const completedJob = { ...jobToComplete, status: 'completed', completedDate: new Date().toLocaleDateString() };
+              const job = prevData.active.find(j => j.id === jobId);
+              if (job) {
+                const updatedActive = prevData.active.filter(j => j.id !== jobId);
+                const completedJob = { 
+                  ...job, 
+                  status: 'completed', 
+                  completedDate: new Date().toLocaleDateString(),
+                  completedTime: new Date().toLocaleTimeString(),
+                  paymentStatus: 'Paid',
+                  rating: 5 // Default rating, can be updated later
+                };
                 return {
                   ...prevData,
                   active: updatedActive,
@@ -224,10 +293,10 @@ const CallsScreen = () => {
 
   const getStatusColor = (status) => {
     switch (status) {
-      case 'ongoing': return COLORS.primary;
-      case 'scheduled': return COLORS.accent;
+      case 'in_progress': return '#f97316';
+      case 'accepted': return '#3b82f6';
       case 'pending': return '#f59e0b';
-      case 'completed': return COLORS.secondary;
+      case 'completed': return '#10b981';
       case 'cancelled': return '#ef4444';
       default: return COLORS.textSecondary;
     }
@@ -235,8 +304,8 @@ const CallsScreen = () => {
 
   const getStatusIcon = (status) => {
     switch (status) {
-      case 'ongoing': return 'play-circle';
-      case 'scheduled': return 'checkmark-circle';
+      case 'in_progress': return 'play-circle';
+      case 'accepted': return 'checkmark-circle';
       case 'pending': return 'time';
       case 'completed': return 'checkmark-done-circle';
       case 'cancelled': return 'close-circle';
@@ -244,9 +313,106 @@ const CallsScreen = () => {
     }
   };
 
+  const getStatusLabel = (status) => {
+    switch (status) {
+      case 'in_progress': return 'In Progress';
+      case 'accepted': return 'Accepted';
+      case 'pending': return 'Pending';
+      case 'completed': return 'Completed';
+      case 'cancelled': return 'Cancelled';
+      default: return status;
+    }
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor={COLORS.primary} />
+      
+      {/* Cancel Reason Modal */}
+      <Modal
+        visible={showCancelModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowCancelModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.cancelModalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Cancel Job</Text>
+              <TouchableOpacity 
+                onPress={() => {
+                  setShowCancelModal(false);
+                  setSelectedCancelReason('');
+                  setJobToCancel(null);
+                }}
+                style={styles.modalCloseButton}
+              >
+                <Icon name="close" size={24} color={COLORS.textPrimary} />
+              </TouchableOpacity>
+            </View>
+            
+            <View style={styles.cancelModalBody}>
+              <Text style={styles.cancelModalText}>
+                Please select a reason for cancelling "{jobToCancel?.title}":
+              </Text>
+              
+              <View style={styles.reasonsList}>
+                {cancelReasons.map((reason) => (
+                  <TouchableOpacity
+                    key={reason.id}
+                    style={[
+                      styles.reasonOption,
+                      selectedCancelReason === reason.label && styles.reasonOptionSelected
+                    ]}
+                    onPress={() => setSelectedCancelReason(reason.label)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.reasonContent}>
+                      <Icon 
+                        name={reason.icon} 
+                        size={22} 
+                        color={selectedCancelReason === reason.label ? COLORS.white : COLORS.textPrimary} 
+                      />
+                      <Text style={[
+                        styles.reasonText,
+                        selectedCancelReason === reason.label && styles.reasonTextSelected
+                      ]}>
+                        {reason.label}
+                      </Text>
+                    </View>
+                    {selectedCancelReason === reason.label && (
+                      <Icon name="checkmark-circle" size={24} color={COLORS.white} />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+              
+              <View style={styles.cancelModalButtons}>
+                <TouchableOpacity 
+                  style={styles.cancelModalButtonSecondary}
+                  onPress={() => {
+                    setShowCancelModal(false);
+                    setSelectedCancelReason('');
+                    setJobToCancel(null);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.cancelModalButtonSecondaryText}>Go Back</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={styles.cancelModalButtonPrimary}
+                  onPress={confirmCancelJob}
+                  activeOpacity={0.8}
+                >
+                  <Icon name="close-circle" size={20} color={COLORS.white} />
+                  <Text style={styles.cancelModalButtonPrimaryText}>Cancel Job</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </View>
+      </Modal>
       
       {/* Week Filter Modal */}
       <Modal
@@ -420,114 +586,233 @@ const CallsScreen = () => {
                   </View>
                 </View>
 
-                {/* Expanded Details */}
+                {/* Expanded Details Section */}
                 {isExpanded && (
                   <View style={styles.expandedDetails}>
-                    <View style={styles.detailSection}>
-                      <Text style={styles.detailSectionTitle}>Description</Text>
-                      <Text style={styles.detailSectionText}>{job.description}</Text>
-                    </View>
-
-                    <View style={styles.detailSection}>
-                      <View style={styles.jobDetailRow}>
-                        <Icon name="time-outline" size={18} color={COLORS.textSecondary} />
-                        <Text style={styles.jobDetailText}>Duration: {job.duration}</Text>
+                    {/* Customer Details Card */}
+                    <View style={styles.detailCard}>
+                      <View style={styles.detailCardHeader}>
+                        <Icon name="person" size={20} color={COLORS.primary} />
+                        <Text style={styles.detailCardTitle}>Customer Details</Text>
                       </View>
-                      <TouchableOpacity 
-                        style={styles.phoneRow}
-                        onPress={() => handleCall(job.phone, job.customer)}
-                        activeOpacity={0.7}
-                      >
-                        <View style={styles.jobDetailRow}>
-                          <Icon name="call-outline" size={18} color={COLORS.secondary} />
-                          <Text style={[styles.jobDetailText, styles.phoneText]}>{job.phone}</Text>
+                      <View style={styles.detailCardContent}>
+                        <View style={styles.detailRow}>
+                          <Text style={styles.detailLabel}>Name:</Text>
+                          <Text style={styles.detailValue}>{job.customer}</Text>
                         </View>
-                        <Icon name="call" size={20} color={COLORS.secondary} />
-                      </TouchableOpacity>
+                        <View style={styles.detailRow}>
+                          <Text style={styles.detailLabel}>Service:</Text>
+                          <Text style={styles.detailValue}>{job.title}</Text>
+                        </View>
+                        <TouchableOpacity 
+                          style={styles.callButtonInline}
+                          onPress={() => handleCall(job.phone, job.customer)}
+                          activeOpacity={0.7}
+                          disabled={job.status !== 'accepted' && job.status !== 'in_progress'}
+                        >
+                          <Icon name="call" size={20} color={COLORS.white} />
+                          <Text style={styles.callButtonText}>{job.phone}</Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
 
-                    <View style={styles.detailSection}>
-                      <Text style={styles.detailSectionTitle}>Requirements</Text>
-                      <Text style={styles.detailSectionText}>{job.requirements}</Text>
+                    {/* Job Details Card */}
+                    <View style={styles.detailCard}>
+                      <View style={styles.detailCardHeader}>
+                        <Icon name="briefcase" size={20} color={COLORS.primary} />
+                        <Text style={styles.detailCardTitle}>Job / Booking Details</Text>
+                      </View>
+                      <View style={styles.detailCardContent}>
+                        <View style={styles.detailRowWithIcon}>
+                          <Icon name="location" size={18} color={COLORS.textSecondary} />
+                          <View style={styles.detailTextContainer}>
+                            <Text style={styles.detailLabel}>Address</Text>
+                            <Text style={styles.detailValue}>{job.location}</Text>
+                          </View>
+                        </View>
+                        
+                        <TouchableOpacity 
+                          style={styles.mapButton}
+                          onPress={() => handleGetDirections(job.location)}
+                          activeOpacity={0.7}
+                        >
+                          <Icon name="navigate" size={18} color={COLORS.secondary} />
+                          <Text style={styles.mapButtonText}>Get Directions</Text>
+                        </TouchableOpacity>
+
+                        <View style={styles.detailRowWithIcon}>
+                          <Icon name="calendar" size={18} color={COLORS.textSecondary} />
+                          <View style={styles.detailTextContainer}>
+                            <Text style={styles.detailLabel}>Date & Time</Text>
+                            <Text style={styles.detailValue}>{job.date}</Text>
+                          </View>
+                        </View>
+
+                        <View style={styles.detailRowWithIcon}>
+                          <Icon name="time" size={18} color={COLORS.textSecondary} />
+                          <View style={styles.detailTextContainer}>
+                            <Text style={styles.detailLabel}>Duration</Text>
+                            <Text style={styles.detailValue}>{job.duration}</Text>
+                          </View>
+                        </View>
+
+                        <View style={styles.descriptionBox}>
+                          <Text style={styles.descriptionLabel}>Service Description</Text>
+                          <Text style={styles.descriptionText}>{job.description}</Text>
+                        </View>
+
+                        <View style={styles.priceBox}>
+                          <Icon name="cash" size={24} color={COLORS.secondary} />
+                          <View>
+                            <Text style={styles.priceLabel}>Payment Amount</Text>
+                            <Text style={styles.priceValue}>{job.payment}</Text>
+                          </View>
+                        </View>
+                      </View>
                     </View>
 
+                    {/* Action Buttons based on Status */}
                     {job.status === 'pending' && (
                       <View style={styles.actionButtons}>
                         <TouchableOpacity 
-                          style={styles.actionButtonAccept} 
-                          activeOpacity={0.8}
+                          style={styles.acceptButton}
                           onPress={() => handleAcceptJob(job.id, job.title)}
+                          activeOpacity={0.8}
                         >
                           <Icon name="checkmark-circle" size={20} color={COLORS.white} />
-                          <Text style={styles.actionButtonPrimaryText}>Accept</Text>
+                          <Text style={styles.acceptButtonText}>Accept Job</Text>
                         </TouchableOpacity>
                         <TouchableOpacity 
-                          style={styles.actionButtonReject} 
-                          activeOpacity={0.8}
+                          style={styles.rejectButton}
                           onPress={() => handleRejectJob(job.id, job.title)}
+                          activeOpacity={0.8}
                         >
                           <Icon name="close-circle" size={20} color={COLORS.white} />
-                          <Text style={styles.actionButtonPrimaryText}>Reject</Text>
+                          <Text style={styles.rejectButtonText}>Reject Job</Text>
                         </TouchableOpacity>
                       </View>
                     )}
 
-                    {job.status === 'ongoing' && (
+                    {job.status === 'accepted' && (
                       <View style={styles.actionButtons}>
                         <TouchableOpacity 
-                          style={styles.actionButtonPrimary} 
+                          style={styles.startButton}
+                          onPress={() => handleStartJob(job.id, job.title)}
                           activeOpacity={0.8}
+                        >
+                          <Icon name="play-circle" size={20} color={COLORS.white} />
+                          <Text style={styles.startButtonText}>Start Job</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                          style={styles.callButtonAction}
+                          onPress={() => handleCall(job.phone, job.customer)}
+                          activeOpacity={0.8}
+                        >
+                          <Icon name="call" size={20} color={COLORS.secondary} />
+                          <Text style={styles.callButtonActionText}>Call Customer</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+
+                    {job.status === 'accepted' && (
+                      <TouchableOpacity 
+                        style={styles.cancelJobButton}
+                        onPress={() => handleRejectJob(job.id, job.title)}
+                        activeOpacity={0.8}
+                      >
+                        <Icon name="close-circle-outline" size={18} color="#ef4444" />
+                        <Text style={styles.cancelJobButtonText}>Cancel Job</Text>
+                      </TouchableOpacity>
+                    )}
+
+                    {job.status === 'in_progress' && (
+                      <View style={styles.actionButtons}>
+                        <TouchableOpacity 
+                          style={styles.completeButton}
                           onPress={() => handleMarkComplete(job.id, job.title)}
+                          activeOpacity={0.8}
                         >
-                          <Icon name="checkmark-circle" size={20} color={COLORS.white} />
-                          <Text style={styles.actionButtonPrimaryText}>Mark Complete</Text>
+                          <Icon name="checkmark-done-circle" size={20} color={COLORS.white} />
+                          <Text style={styles.completeButtonText}>Complete Job</Text>
                         </TouchableOpacity>
                         <TouchableOpacity 
-                          style={styles.actionButtonSecondary} 
-                          activeOpacity={0.8}
+                          style={styles.callButtonAction}
                           onPress={() => handleCall(job.phone, job.customer)}
+                          activeOpacity={0.8}
                         >
                           <Icon name="call" size={20} color={COLORS.secondary} />
-                          <Text style={styles.actionButtonSecondaryText}>Call Customer</Text>
+                          <Text style={styles.callButtonActionText}>Call Customer</Text>
                         </TouchableOpacity>
                       </View>
                     )}
 
-                    {job.status === 'scheduled' && (
-                      <View style={styles.actionButtons}>
-                        <TouchableOpacity 
-                          style={styles.actionButtonPrimary} 
-                          activeOpacity={0.8}
-                          onPress={() => handleGetDirections(job.location)}
-                        >
-                          <Icon name="navigate" size={20} color={COLORS.white} />
-                          <Text style={styles.actionButtonPrimaryText}>Get Directions</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity 
-                          style={styles.actionButtonSecondary} 
-                          activeOpacity={0.8}
-                          onPress={() => handleCall(job.phone, job.customer)}
-                        >
-                          <Icon name="call" size={20} color={COLORS.secondary} />
-                          <Text style={styles.actionButtonSecondaryText}>Call Customer</Text>
-                        </TouchableOpacity>
-                      </View>
+                    {job.status === 'in_progress' && (
+                      <TouchableOpacity 
+                        style={styles.cancelJobButton}
+                        onPress={() => handleRejectJob(job.id, job.title)}
+                        activeOpacity={0.8}
+                      >
+                        <Icon name="close-circle-outline" size={18} color="#ef4444" />
+                        <Text style={styles.cancelJobButtonText}>Cancel Job</Text>
+                      </TouchableOpacity>
                     )}
 
-                    {job.status === 'completed' && job.rating && (
-                      <View style={styles.completedInfo}>
-                        <View style={styles.ratingDisplay}>
-                          <Icon name="star" size={20} color="#f59e0b" />
-                          <Text style={styles.ratingDisplayText}>Rated {job.rating}.0 by customer</Text>
+                    {/* Completed State Display */}
+                    {job.status === 'completed' && (
+                      <View style={styles.statusCard}>
+                        <View style={[styles.statusCardHeader, { backgroundColor: '#d1fae5' }]}>
+                          <Icon name="checkmark-done-circle" size={24} color="#10b981" />
+                          <Text style={[styles.statusCardTitle, { color: '#10b981' }]}>Job Completed</Text>
+                        </View>
+                        <View style={styles.statusCardContent}>
+                          <View style={styles.statusDetailRow}>
+                            <Icon name="calendar-outline" size={18} color={COLORS.textSecondary} />
+                            <Text style={styles.statusDetailText}>
+                              Completed on {job.completedDate} at {job.completedTime}
+                            </Text>
+                          </View>
+                          <View style={styles.statusDetailRow}>
+                            <Icon name="cash-outline" size={18} color={COLORS.textSecondary} />
+                            <Text style={styles.statusDetailText}>
+                              Payment Status: <Text style={styles.paidText}>{job.paymentStatus || 'Paid'}</Text>
+                            </Text>
+                          </View>
+                          {job.rating && (
+                            <View style={styles.ratingBox}>
+                              <Icon name="star" size={22} color="#f59e0b" />
+                              <Text style={styles.ratingBoxText}>Customer Rating: {job.rating}.0/5.0</Text>
+                            </View>
+                          )}
                         </View>
                       </View>
                     )}
 
-                    {job.status === 'cancelled' && job.cancelledDate && (
-                      <View style={styles.cancelledInfo}>
-                        <View style={styles.cancelledDisplay}>
-                          <Icon name="close-circle" size={20} color="#ef4444" />
-                          <Text style={styles.cancelledDisplayText}>Cancelled on {job.cancelledDate}</Text>
+                    {/* Cancelled State Display */}
+                    {job.status === 'cancelled' && (
+                      <View style={styles.statusCard}>
+                        <View style={[styles.statusCardHeader, { backgroundColor: '#fee2e2' }]}>
+                          <Icon name="close-circle" size={24} color="#ef4444" />
+                          <Text style={[styles.statusCardTitle, { color: '#ef4444' }]}>Job Cancelled</Text>
+                        </View>
+                        <View style={styles.statusCardContent}>
+                          <View style={styles.statusDetailRow}>
+                            <Icon name="person-outline" size={18} color={COLORS.textSecondary} />
+                            <Text style={styles.statusDetailText}>
+                              Cancelled by: <Text style={styles.cancelledByText}>{job.cancelledBy || 'Worker'}</Text>
+                            </Text>
+                          </View>
+                          <View style={styles.statusDetailRow}>
+                            <Icon name="calendar-outline" size={18} color={COLORS.textSecondary} />
+                            <Text style={styles.statusDetailText}>
+                              {job.cancelledDate} at {job.cancelledTime}
+                            </Text>
+                          </View>
+                          {job.cancelReason && (
+                            <View style={styles.cancelReasonBox}>
+                              <Text style={styles.cancelReasonLabel}>Cancellation Reason:</Text>
+                              <Text style={styles.cancelReasonText}>{job.cancelReason}</Text>
+                            </View>
+                          )}
                         </View>
                       </View>
                     )}
@@ -560,6 +845,41 @@ const CallsScreen = () => {
                     />
                   </TouchableOpacity>
                 </View>
+
+                {/* Thin Action Buttons for Active Jobs - Always visible */}
+                {activeTab === 'active' && (
+                  <View style={styles.thinButtonsContainer}>
+                    {/* Post Button - Always visible on all active cards */}
+                    <TouchableOpacity 
+                      style={styles.thinButton}
+                      onPress={() => handleAcceptJob(job.id, job.title)}
+                      activeOpacity={0.8}
+                    >
+                      <Icon name="checkmark-circle-outline" size={18} color="#3b82f6" />
+                      <Text style={[styles.thinButtonText, { color: '#3b82f6' }]}>Post</Text>
+                    </TouchableOpacity>
+                    
+                    {/* Cancel Button - Always visible on all active cards */}
+                    <TouchableOpacity 
+                      style={styles.thinButton}
+                      onPress={() => handleRejectJob(job.id, job.title)}
+                      activeOpacity={0.8}
+                    >
+                      <Icon name="close-circle-outline" size={18} color="#ef4444" />
+                      <Text style={[styles.thinButtonText, { color: '#ef4444' }]}>Cancel</Text>
+                    </TouchableOpacity>
+                    
+                    {/* Complete Button - Always visible on all active cards */}
+                    <TouchableOpacity 
+                      style={styles.thinButton}
+                      onPress={() => handleMarkComplete(job.id, job.title)}
+                      activeOpacity={0.8}
+                    >
+                      <Icon name="checkmark-done-circle-outline" size={18} color="#10b981" />
+                      <Text style={[styles.thinButtonText, { color: '#10b981' }]}>Complete</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
               </View>
             );
           })
@@ -797,120 +1117,149 @@ const styles = StyleSheet.create({
     borderTopColor: COLORS.divider,
     gap: 16,
   },
-  detailSection: {
-    gap: 8,
+  detailCard: {
+    backgroundColor: COLORS.background,
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: COLORS.divider,
   },
-  detailSectionTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: COLORS.textPrimary,
-    marginBottom: 4,
-  },
-  detailSectionText: {
-    fontSize: 14,
-    color: COLORS.textSecondary,
-    lineHeight: 20,
-  },
-  actionButtons: {
+  detailCardHeader: {
     flexDirection: 'row',
-    gap: 12,
-    marginTop: 8,
+    alignItems: 'center',
+    gap: 8,
+    padding: 12,
+    backgroundColor: COLORS.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.divider,
   },
-  actionButtonPrimary: {
+  detailCardTitle: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: COLORS.textPrimary,
+  },
+  detailCardContent: {
+    padding: 12,
+    gap: 12,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  detailRowWithIcon: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  detailTextContainer: {
     flex: 1,
+  },
+  detailLabel: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginBottom: 2,
+  },
+  detailValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+  },
+  callButtonInline: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
     backgroundColor: COLORS.secondary,
-    paddingVertical: 14,
-    borderRadius: 12,
-    elevation: 2,
-    shadowColor: COLORS.secondary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
+    paddingVertical: 12,
+    borderRadius: 10,
+    marginTop: 4,
   },
-  actionButtonPrimaryText: {
+  callButtonText: {
     fontSize: 14,
     fontWeight: '600',
     color: COLORS.white,
   },
-  actionButtonSecondary: {
-    flex: 1,
+  mapButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
     backgroundColor: COLORS.surface,
-    paddingVertical: 14,
-    borderRadius: 12,
-    borderWidth: 2,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
     borderColor: COLORS.secondary,
   },
-  actionButtonSecondaryText: {
-    fontSize: 14,
+  mapButtonText: {
+    fontSize: 13,
     fontWeight: '600',
     color: COLORS.secondary,
   },
-  completedInfo: {
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.divider,
+  descriptionBox: {
+    backgroundColor: COLORS.surface,
+    padding: 10,
+    borderRadius: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: COLORS.primary,
   },
-  ratingDisplay: {
+  descriptionLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    marginBottom: 4,
+  },
+  descriptionText: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    lineHeight: 18,
+  },
+  priceBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#fef3c7',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    gap: 12,
+    backgroundColor: '#f0fdf4',
+    padding: 12,
     borderRadius: 10,
-    alignSelf: 'flex-start',
+    borderWidth: 2,
+    borderColor: COLORS.secondary,
   },
-  ratingDisplayText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#92400e',
+  priceLabel: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    marginBottom: 2,
   },
-  cancelledInfo: {
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.divider,
+  priceValue: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: COLORS.secondary,
   },
-  cancelledDisplay: {
+  actionButtons: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#fee2e2',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    alignSelf: 'flex-start',
+    gap: 10,
+    marginTop: 8,
   },
-  cancelledDisplayText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#991b1b',
-  },
-  actionButtonAccept: {
+  acceptButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: COLORS.accent,
+    backgroundColor: '#3b82f6',
     paddingVertical: 14,
     borderRadius: 12,
     elevation: 2,
-    shadowColor: COLORS.accent,
+    shadowColor: '#3b82f6',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.3,
     shadowRadius: 4,
   },
-  actionButtonReject: {
+  acceptButtonText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: COLORS.white,
+  },
+  rejectButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
@@ -922,8 +1271,303 @@ const styles = StyleSheet.create({
     elevation: 2,
     shadowColor: '#ef4444',
     shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+  },
+  rejectButtonText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: COLORS.white,
+  },
+  startButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#f97316',
+    paddingVertical: 14,
+    borderRadius: 12,
+    elevation: 2,
+    shadowColor: '#f97316',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+  },
+  startButtonText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: COLORS.white,
+  },
+  completeButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#10b981',
+    paddingVertical: 14,
+    borderRadius: 12,
+    elevation: 2,
+    shadowColor: '#10b981',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+  },
+  completeButtonText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: COLORS.white,
+  },
+  callButtonAction: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: COLORS.surface,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: COLORS.secondary,
+  },
+  callButtonActionText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: COLORS.secondary,
+  },
+  cancelJobButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: COLORS.surface,
+    paddingVertical: 12,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: '#ef4444',
+    marginTop: 10,
+  },
+  cancelJobButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#ef4444',
+  },
+  quickCancelButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#fee2e2',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    marginTop: 12,
+    borderWidth: 2,
+    borderColor: '#ef4444',
+    elevation: 2,
+    shadowColor: '#ef4444',
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
+  },
+  quickCancelButtonText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#ef4444',
+  },
+  thinButtonsContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.divider,
+  },
+  thinButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    backgroundColor: COLORS.background,
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  thinButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  statusCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 12,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: COLORS.divider,
+    marginTop: 8,
+  },
+  statusCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 12,
+  },
+  statusCardTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  statusCardContent: {
+    padding: 12,
+    gap: 10,
+  },
+  statusDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  statusDetailText: {
+    fontSize: 13,
+    color: COLORS.textPrimary,
+  },
+  paidText: {
+    fontWeight: 'bold',
+    color: '#10b981',
+  },
+  cancelledByText: {
+    fontWeight: 'bold',
+    color: '#ef4444',
+  },
+  ratingBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#fef3c7',
+    padding: 10,
+    borderRadius: 8,
+    marginTop: 4,
+  },
+  ratingBoxText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#92400e',
+  },
+  cancelReasonBox: {
+    backgroundColor: '#fee2e2',
+    padding: 12,
+    borderRadius: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#ef4444',
+    marginTop: 4,
+  },
+  cancelReasonLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#ef4444',
+    marginBottom: 4,
+  },
+  cancelReasonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#991b1b',
+    lineHeight: 20,
+  },
+  reasonsList: {
+    gap: 10,
+    marginBottom: 20,
+  },
+  reasonOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 14,
+    borderRadius: 12,
+    backgroundColor: COLORS.background,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  reasonOptionSelected: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+  reasonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  reasonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+  },
+  reasonTextSelected: {
+    color: COLORS.white,
+  },
+  cancelModalContent: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 20,
+    width: '100%',
+    maxWidth: 400,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+  },
+  cancelModalBody: {
+    padding: 20,
+  },
+  cancelModalText: {
+    fontSize: 15,
+    color: COLORS.textPrimary,
+    marginBottom: 16,
+    lineHeight: 22,
+  },
+  cancelModalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  cancelModalButtonSecondary: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: COLORS.background,
+    borderWidth: 2,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelModalButtonSecondaryText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+  },
+  cancelModalButtonPrimary: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: '#ef4444',
+    elevation: 2,
+    shadowColor: '#ef4444',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
+  cancelModalButtonPrimaryText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.white,
   },
   modalOverlay: {
     flex: 1,

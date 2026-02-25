@@ -134,12 +134,16 @@ const SubscriptionScreen = ({ onBack, userData }) => {
     try {
       setProcessing(true);
       
+      console.log('💳 Processing subscription:', plan.name, price);
+      
       // Create transaction
       const response = await api.createSubscriptionTransaction(
         plan.name,
         billingCycle,
         price
       );
+      
+      console.log('✅ Transaction created:', response);
       
       if (response.success) {
         // In production, integrate with Razorpay here
@@ -152,6 +156,8 @@ const SubscriptionScreen = ({ onBack, userData }) => {
               text: 'OK',
               onPress: async () => {
                 try {
+                  console.log('💰 Confirming payment...');
+                  
                   // Confirm payment
                   const confirmResponse = await api.confirmSubscriptionPayment(
                     response.transaction._id,
@@ -161,6 +167,8 @@ const SubscriptionScreen = ({ onBack, userData }) => {
                       razorpaySignature: 'demo_signature'
                     }
                   );
+                  
+                  console.log('✅ Payment confirmed:', confirmResponse);
                   
                   if (confirmResponse.success) {
                     Alert.alert(
@@ -176,14 +184,19 @@ const SubscriptionScreen = ({ onBack, userData }) => {
                         }
                       ]
                     );
+                  } else {
+                    Alert.alert('Error', 'Failed to confirm payment. Please contact support.');
                   }
                 } catch (error) {
+                  console.error('❌ Payment confirmation error:', error);
                   Alert.alert('Error', 'Failed to confirm payment. Please contact support.');
                 }
               }
             }
           ]
         );
+      } else {
+        Alert.alert('Error', 'Failed to create transaction. Please try again.');
       }
     } catch (error) {
       console.error('❌ Process Subscription Error:', error);
@@ -205,19 +218,32 @@ const SubscriptionScreen = ({ onBack, userData }) => {
             try {
               setProcessing(true);
               
+              console.log('⭐ Processing add-on:', addon.name);
+              
               const response = await api.createFeaturedTransaction(
                 addon.name,
                 addon.id.includes('weekly') ? 'weekly' : 'monthly',
                 addon.price
               );
               
+              console.log('✅ Add-on transaction created:', response);
+              
               if (response.success) {
                 Alert.alert(
                   'Success',
-                  'Add-on purchase initiated. Payment gateway will open in production.'
+                  'Add-on purchase initiated. Payment gateway will open in production.',
+                  [
+                    {
+                      text: 'OK',
+                      onPress: () => loadSubscriptionData()
+                    }
+                  ]
                 );
+              } else {
+                Alert.alert('Error', 'Failed to process add-on purchase.');
               }
             } catch (error) {
+              console.error('❌ Add-on purchase error:', error);
               Alert.alert('Error', 'Failed to process add-on purchase.');
             } finally {
               setProcessing(false);
@@ -267,11 +293,11 @@ const SubscriptionScreen = ({ onBack, userData }) => {
               onPress={onBack}
               activeOpacity={0.8}
             >
-              <Icon name="arrow-back" size={24} color={COLORS.white} />
+              <Icon name="arrow-back" size={22} color={COLORS.white} />
             </TouchableOpacity>
           )}
           <View style={styles.headerContent}>
-            <Text style={styles.title}>🚀 Boost Your Business</Text>
+            <Text style={styles.title}> Boost Your Business</Text>
             <Text style={styles.subtitle}>Choose the perfect plan for your needs</Text>
           </View>
         </View>
@@ -316,7 +342,7 @@ const SubscriptionScreen = ({ onBack, userData }) => {
           </View>
         ) : plans.length === 0 ? (
           <View style={styles.emptyContainer}>
-            <Icon name="alert-circle-outline" size={64} color={COLORS.textSecondary} />
+            <Icon name="alert-circle-outline" size={48} color={COLORS.textSecondary} />
             <Text style={styles.emptyText}>No Plans Available</Text>
             <Text style={styles.emptySubtext}>
               Unable to load subscription plans. Please check your connection.
@@ -326,7 +352,7 @@ const SubscriptionScreen = ({ onBack, userData }) => {
               onPress={loadSubscriptionData}
               activeOpacity={0.8}
             >
-              <Icon name="refresh" size={20} color={COLORS.white} />
+              <Icon name="refresh" size={18} color={COLORS.white} />
               <Text style={styles.retryButtonText}>Retry</Text>
             </TouchableOpacity>
           </View>
@@ -358,7 +384,7 @@ const SubscriptionScreen = ({ onBack, userData }) => {
                   )}
 
                   <View style={[styles.planIconContainer, { backgroundColor: `${plan.color}15` }]}>
-                    <Icon name={plan.icon} size={36} color={plan.color} />
+                    <Icon name={plan.icon} size={24} color={plan.color} />
                   </View>
 
                   <Text style={styles.planName}>{plan.name}</Text>
@@ -385,7 +411,7 @@ const SubscriptionScreen = ({ onBack, userData }) => {
                       <View key={index} style={styles.featureRow}>
                         <Icon
                           name={feature.included ? 'checkmark-circle' : 'close-circle'}
-                          size={18}
+                          size={15}
                           color={feature.included ? plan.color : '#cbd5e1'}
                         />
                         <Text
@@ -423,7 +449,7 @@ const SubscriptionScreen = ({ onBack, userData }) => {
                           {isCurrentPlan ? 'Current Plan' : 'Upgrade Now'}
                         </Text>
                         {!isCurrentPlan && (
-                          <Icon name="arrow-forward" size={18} color={COLORS.white} />
+                          <Icon name="arrow-forward" size={14} color={COLORS.white} />
                         )}
                       </>
                     )}
@@ -451,7 +477,7 @@ const SubscriptionScreen = ({ onBack, userData }) => {
                 )}
                 
                 <View style={[styles.addonIconContainer, { backgroundColor: `${addon.color}15` }]}>
-                  <Icon name={addon.icon} size={28} color={addon.color} />
+                  <Icon name={addon.icon} size={20} color={addon.color} />
                 </View>
 
                 <Text style={styles.addonName}>{addon.name}</Text>
@@ -494,7 +520,7 @@ const SubscriptionScreen = ({ onBack, userData }) => {
             ].map((benefit, index) => (
               <View key={index} style={styles.benefitItem}>
                 <View style={styles.benefitIconContainer}>
-                  <Icon name={benefit.icon} size={24} color={COLORS.primary} />
+                  <Icon name={benefit.icon} size={20} color={COLORS.primary} />
                 </View>
                 <View style={styles.benefitContent}>
                   <Text style={styles.benefitTitle}>{benefit.title}</Text>
@@ -523,7 +549,7 @@ const SubscriptionScreen = ({ onBack, userData }) => {
                     ]}>
                       <Icon 
                         name={transaction.type === 'Subscription' ? 'card' : 'star'} 
-                        size={20} 
+                        size={16} 
                         color={transaction.type === 'Subscription' ? COLORS.primary : COLORS.accent} 
                       />
                     </View>
@@ -568,7 +594,7 @@ const SubscriptionScreen = ({ onBack, userData }) => {
             {transactions.length > 5 && (
               <TouchableOpacity style={styles.viewAllButton} activeOpacity={0.7}>
                 <Text style={styles.viewAllButtonText}>View All Transactions</Text>
-                <Icon name="arrow-forward" size={16} color={COLORS.primary} />
+                <Icon name="arrow-forward" size={12} color={COLORS.primary} />
               </TouchableOpacity>
             )}
           </View>
@@ -587,60 +613,60 @@ const styles = StyleSheet.create({
   },
   headerContainer: {
     backgroundColor: COLORS.primary,
-    paddingBottom: 24,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
+    paddingBottom: 16,
+    borderBottomLeftRadius: 18,
+    borderBottomRightRadius: 18,
     elevation: 6,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 16,
+    paddingHorizontal: 16,
+    paddingTop: 12,
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: 'rgba(255,255,255,0.2)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
+    marginRight: 10,
   },
   headerContent: {
     flex: 1,
   },
   title: {
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: '900',
     color: COLORS.white,
-    marginBottom: 6,
+    marginBottom: 3,
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: 12,
     color: 'rgba(255,255,255,0.9)',
   },
   content: {
     flex: 1,
   },
   scrollContent: {
-    padding: 16,
+    padding: 12,
   },
   billingToggleCard: {
     backgroundColor: COLORS.white,
-    borderRadius: 20,
-    padding: 20,
-    marginBottom: 20,
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 12,
     elevation: 3,
   },
   billingToggleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 16,
+    gap: 12,
   },
   billingLabel: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
     color: COLORS.textSecondary,
   },
@@ -651,27 +677,27 @@ const styles = StyleSheet.create({
   billingYearlyContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
   savingsBadge: {
     backgroundColor: COLORS.secondary,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 5,
   },
   savingsBadgeText: {
     color: COLORS.white,
-    fontSize: 11,
+    fontSize: 9,
     fontWeight: '800',
   },
   plansContainer: {
-    gap: 16,
-    marginBottom: 24,
+    gap: 10,
+    marginBottom: 16,
   },
   planCard: {
     backgroundColor: COLORS.white,
-    borderRadius: 24,
-    padding: 24,
+    borderRadius: 16,
+    padding: 14,
     elevation: 4,
     borderWidth: 2,
     borderColor: 'transparent',
@@ -686,82 +712,83 @@ const styles = StyleSheet.create({
   },
   planBadge: {
     position: 'absolute',
-    top: 16,
-    right: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
+    top: 10,
+    right: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
   },
   planBadgeText: {
     color: COLORS.white,
-    fontSize: 11,
+    fontSize: 9,
     fontWeight: '800',
   },
   planIconContainer: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
+    marginBottom: 8,
   },
   planName: {
-    fontSize: 24,
+    fontSize: 17,
     fontWeight: '900',
     color: COLORS.textPrimary,
-    marginBottom: 12,
+    marginBottom: 6,
   },
   planPriceContainer: {
-    marginBottom: 20,
+    marginBottom: 10,
   },
   planOriginalPrice: {
-    fontSize: 16,
+    fontSize: 12,
     color: COLORS.textSecondary,
     textDecorationLine: 'line-through',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   planPriceRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
-    gap: 4,
+    gap: 3,
   },
   planPrice: {
-    fontSize: 40,
+    fontSize: 26,
     fontWeight: '900',
     color: COLORS.textPrimary,
   },
   planPeriod: {
-    fontSize: 16,
+    fontSize: 12,
     color: COLORS.textSecondary,
     fontWeight: '600',
   },
   savingsTag: {
     backgroundColor: '#10b98115',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 5,
     alignSelf: 'flex-start',
-    marginTop: 8,
+    marginTop: 4,
   },
   savingsTagText: {
     color: '#10b981',
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: '800',
   },
   planFeatures: {
-    gap: 12,
-    marginBottom: 24,
+    gap: 6,
+    marginBottom: 12,
   },
   featureRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 6,
   },
   featureText: {
-    fontSize: 14,
+    fontSize: 12,
     color: COLORS.textPrimary,
     fontWeight: '500',
     flex: 1,
+    lineHeight: 16,
   },
   featureTextDisabled: {
     color: COLORS.textSecondary,
@@ -770,121 +797,122 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 16,
-    borderRadius: 16,
+    gap: 6,
+    paddingVertical: 11,
+    borderRadius: 12,
     elevation: 4,
   },
   planButtonPopular: {
     elevation: 6,
   },
   planButtonText: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '800',
   },
   addOnsSection: {
-    marginBottom: 24,
+    marginBottom: 16,
   },
   sectionTitle: {
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: '900',
     color: COLORS.textPrimary,
-    marginBottom: 8,
+    marginBottom: 5,
   },
   sectionSubtitle: {
-    fontSize: 14,
+    fontSize: 12,
     color: COLORS.textSecondary,
-    marginBottom: 16,
+    marginBottom: 12,
   },
   addOnsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
+    gap: 10,
   },
   addonCard: {
-    width: '48%',
+    width: '48.5%',
     backgroundColor: COLORS.white,
-    borderRadius: 20,
-    padding: 16,
+    borderRadius: 14,
+    padding: 12,
     elevation: 3,
   },
   addonSavingsBadge: {
     position: 'absolute',
-    top: 12,
-    right: 12,
+    top: 8,
+    right: 8,
     backgroundColor: '#10b981',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 5,
   },
   addonSavingsText: {
     color: COLORS.white,
-    fontSize: 10,
+    fontSize: 8,
     fontWeight: '800',
   },
   addonIconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   addonName: {
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: '800',
     color: COLORS.textPrimary,
-    marginBottom: 4,
+    marginBottom: 2,
   },
   addonDescription: {
-    fontSize: 12,
+    fontSize: 10,
     color: COLORS.textSecondary,
-    marginBottom: 12,
+    marginBottom: 8,
+    lineHeight: 14,
   },
   addonPriceRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
-    gap: 4,
-    marginBottom: 12,
+    gap: 8,
+    marginBottom: 8,
   },
   addonPrice: {
-    fontSize: 24,
+    fontSize: 18,
     fontWeight: '900',
     color: COLORS.textPrimary,
   },
   addonPeriod: {
-    fontSize: 12,
+    fontSize: 10,
     color: COLORS.textSecondary,
     fontWeight: '600',
   },
   addonButton: {
-    borderWidth: 2,
-    paddingVertical: 10,
-    borderRadius: 12,
+    borderWidth: 1.5,
+    paddingVertical: 7,
+    borderRadius: 8,
     alignItems: 'center',
   },
   addonButtonText: {
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: '800',
   },
   benefitsSection: {
     backgroundColor: COLORS.white,
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 20,
+    borderRadius: 16,
+    padding: 12,
+    marginBottom: 14,
   },
   benefitsList: {
-    gap: 16,
+    gap: 10,
   },
   benefitItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
+    gap: 10,
   },
   benefitIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: `${COLORS.primary}15`,
     alignItems: 'center',
     justifyContent: 'center',
@@ -893,85 +921,86 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   benefitTitle: {
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: '800',
     color: COLORS.textPrimary,
-    marginBottom: 2,
+    marginBottom: 1,
   },
   benefitDesc: {
-    fontSize: 13,
+    fontSize: 11,
     color: COLORS.textSecondary,
+    lineHeight: 15,
   },
   bottomPadding: {
-    height: 40,
+    height: 24,
   },
   loadingContainer: {
-    padding: 40,
+    padding: 24,
     alignItems: 'center',
     justifyContent: 'center',
   },
   loadingText: {
-    marginTop: 16,
-    fontSize: 14,
+    marginTop: 10,
+    fontSize: 12,
     color: COLORS.textSecondary,
   },
   emptyContainer: {
-    padding: 40,
+    padding: 24,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: COLORS.white,
-    borderRadius: 24,
-    marginHorizontal: 16,
+    borderRadius: 16,
+    marginHorizontal: 12,
   },
   emptyText: {
-    marginTop: 16,
-    fontSize: 18,
+    marginTop: 12,
+    fontSize: 16,
     fontWeight: '700',
     color: COLORS.textPrimary,
   },
   emptySubtext: {
-    marginTop: 8,
-    fontSize: 14,
+    marginTop: 5,
+    fontSize: 12,
     color: COLORS.textSecondary,
     textAlign: 'center',
-    lineHeight: 20,
+    lineHeight: 17,
   },
   retryButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginTop: 24,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
+    gap: 6,
+    marginTop: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 9,
     backgroundColor: COLORS.primary,
-    borderRadius: 12,
+    borderRadius: 8,
   },
   retryButtonText: {
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: '700',
     color: COLORS.white,
   },
   transactionsSection: {
-    marginBottom: 24,
+    marginBottom: 16,
   },
   transactionsList: {
-    gap: 12,
+    gap: 8,
   },
   transactionCard: {
     backgroundColor: COLORS.white,
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 12,
+    padding: 12,
     elevation: 2,
   },
   transactionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 8,
   },
   transactionIconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -979,53 +1008,53 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   transactionType: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '800',
     color: COLORS.textPrimary,
     marginBottom: 2,
   },
   transactionPlan: {
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: '600',
     color: COLORS.textSecondary,
-    marginBottom: 2,
+    marginBottom: 1,
   },
   transactionDate: {
-    fontSize: 11,
+    fontSize: 9,
     color: COLORS.textLight,
   },
   transactionRight: {
     alignItems: 'flex-end',
   },
   transactionAmount: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '900',
     color: COLORS.textPrimary,
-    marginBottom: 6,
+    marginBottom: 4,
   },
   transactionStatus: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 5,
   },
   transactionStatusText: {
-    fontSize: 11,
+    fontSize: 9,
     fontWeight: '800',
   },
   viewAllButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    marginTop: 12,
-    paddingVertical: 12,
+    gap: 5,
+    marginTop: 8,
+    paddingVertical: 9,
     backgroundColor: COLORS.white,
-    borderRadius: 12,
-    borderWidth: 2,
+    borderRadius: 8,
+    borderWidth: 1.5,
     borderColor: COLORS.primary,
   },
   viewAllButtonText: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '800',
     color: COLORS.primary,
   },

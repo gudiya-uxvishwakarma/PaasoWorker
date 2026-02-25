@@ -9,8 +9,7 @@ import {
   Switch,
   Alert,
   Linking,
-  Platform,
-  PermissionsAndroid
+  Platform
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import COLORS from '../../constants/colors';
@@ -32,6 +31,7 @@ const PrivacySettingsScreen = ({ onBack, userData }) => {
 
   const loadSettings = async () => {
     try {
+      console.log('🔒 Loading privacy settings from backend');
       const response = await api.getPrivacySettings();
       if (response.success && response.settings) {
         const settings = response.settings;
@@ -41,21 +41,28 @@ const PrivacySettingsScreen = ({ onBack, userData }) => {
         setAllowMessages(settings.allowMessages ?? true);
         setShowOnlineStatus(settings.showOnlineStatus ?? true);
         setShareAnalytics(settings.shareAnalytics ?? true);
+        console.log('✅ Privacy settings loaded successfully');
+      } else {
+        console.log('⚠️ No settings found, using defaults');
       }
     } catch (error) {
       console.error('❌ Load Settings Error:', error);
+      // Keep default values on error
     }
   };
 
   const saveSettings = async (key, value) => {
     try {
       setSaving(true);
+      console.log(`💾 Saving privacy setting: ${key} = ${value}`);
       const settings = {
         [key]: value
       };
       const response = await api.updatePrivacySettings(settings);
       if (response.success) {
-        console.log('✅ Settings saved');
+        console.log('✅ Privacy settings saved successfully');
+      } else {
+        console.log('⚠️ Failed to save settings');
       }
     } catch (error) {
       console.error('❌ Save Settings Error:', error);
@@ -69,68 +76,23 @@ const PrivacySettingsScreen = ({ onBack, userData }) => {
     saveSettings(key, value);
   };
 
-  const requestStoragePermission = async () => {
-    if (Platform.OS === 'android' && Platform.Version >= 23) {
-      try {
-        const granted = await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
-          {
-            title: 'Storage Permission',
-            message: 'App needs access to your storage to save your data',
-            buttonNeutral: 'Ask Me Later',
-            buttonNegative: 'Cancel',
-            buttonPositive: 'OK',
-          },
-        );
-        return granted === PermissionsAndroid.RESULTS.GRANTED;
-      } catch (err) {
-        console.warn('Permission error:', err);
-        return false;
-      }
-    }
-    return true;
-  };
-
   const handleDownloadData = async () => {
     try {
       setDownloading(true);
       
-      // Request storage permission for Android
-      const hasPermission = await requestStoragePermission();
-      if (!hasPermission) {
-        Alert.alert('Permission Denied', 'Storage permission is required to download your data.');
+      console.log('📥 Fetching data from backend...');
+      
+      // Fetch data from backend
+      const response = await api.downloadWorkerData();
+      
+      if (!response.success) {
+        Alert.alert('Error', 'Failed to fetch your data from server.');
         setDownloading(false);
         return;
       }
-
-      // Prepare data to download
-      const dataToDownload = {
-        exportDate: new Date().toISOString(),
-        exportedBy: 'PaasoWork App',
-        personalInfo: {
-          name: userData?.name || 'N/A',
-          email: userData?.email || 'N/A',
-          mobile: userData?.mobile || 'N/A',
-          workerType: userData?.workerType || 'N/A',
-        },
-        professionalInfo: {
-          category: userData?.category || [],
-          serviceArea: userData?.serviceArea || 'N/A',
-          city: userData?.city || 'N/A',
-          state: userData?.state || 'N/A',
-          pincode: userData?.pincode || 'N/A',
-          experience: userData?.experience || 0,
-          languages: userData?.languages || [],
-          bio: userData?.bio || 'N/A',
-        },
-        accountInfo: {
-          status: userData?.status || 'N/A',
-          verified: userData?.verified || false,
-          kycVerified: userData?.kycVerified || false,
-          registeredDate: userData?.createdAt || new Date().toISOString(),
-        }
-      };
-
+      
+      const dataToDownload = response.data;
+      
       // Convert to formatted JSON string
       const jsonData = JSON.stringify(dataToDownload, null, 2);
       
@@ -145,7 +107,7 @@ const PrivacySettingsScreen = ({ onBack, userData }) => {
       
       Alert.alert(
         'Download Data',
-        'Your data will be prepared and you can save it via email or copy it.',
+        'Your data has been fetched from the server. Choose how you want to save it.',
         [
           {
             text: 'Cancel',
@@ -168,17 +130,20 @@ const PrivacySettingsScreen = ({ onBack, userData }) => {
             }
           },
           {
-            text: 'Copy Data',
+            text: 'View Data',
             onPress: () => {
               // Show data in alert for user to copy
               Alert.alert(
-                'Your Data',
-                jsonData,
+                'Your Data Export',
+                `Export Date: ${new Date(dataToDownload.exportDate).toLocaleString()}\n\nYou can copy this data from the console or request it via email.`,
                 [
                   {
                     text: 'OK',
                     onPress: () => {
-                      Alert.alert('Success', 'You can now manually copy this data from the previous dialog.');
+                      console.log('=== YOUR DATA EXPORT ===');
+                      console.log(jsonData);
+                      console.log('=== END OF DATA EXPORT ===');
+                      Alert.alert('Success', 'Your data has been logged to the console. You can also request it via email.');
                     }
                   }
                 ]
@@ -190,7 +155,7 @@ const PrivacySettingsScreen = ({ onBack, userData }) => {
 
     } catch (error) {
       console.error('Download Data Error:', error);
-      Alert.alert('Error', `Failed to prepare data: ${error.message}`);
+      Alert.alert('Error', `Failed to download data: ${error.message || 'Unknown error'}`);
     } finally {
       setDownloading(false);
     }

@@ -13,7 +13,7 @@ import MaterialIcon from 'react-native-vector-icons/MaterialCommunityIcons';
 import COLORS from '../../constants/colors';
 import { useLanguage } from '../../context/LanguageContext';
 
-const WorkerTypeSelectionScreen = ({ onComplete, onBack, onNavigateToLanguage }) => {
+const WorkerTypeSelectionScreen = ({ onComplete, onBack, onNavigateToLanguage, onNavigateToCity, selectedCity }) => {
   const [selectedType, setSelectedType] = useState(null);
   
   // Use global language context
@@ -22,6 +22,9 @@ const WorkerTypeSelectionScreen = ({ onComplete, onBack, onNavigateToLanguage })
   // Get current language native name
   const currentLanguage = languages.find(lang => lang.name === selectedLanguage);
   const displayLanguage = currentLanguage?.nativeName || selectedLanguage;
+  
+  // Display city
+  const displayCity = selectedCity || 'Select City';
 
   const workerTypes = [
     {
@@ -33,10 +36,10 @@ const WorkerTypeSelectionScreen = ({ onComplete, onBack, onNavigateToLanguage })
       featuresKeys: ['personalProfile', 'directBookings']
     },
     {
-      id: 'crew_leader',
+      id: 'crew_Team',
       icon: 'people',
       color: COLORS.secondary,
-      titleKey: 'crewLeader',
+      titleKey: 'Crew/Team',
       descriptionKey: 'manageTeam',
       featuresKeys: ['teamManagement', 'multipleWorkers']
     },
@@ -67,12 +70,22 @@ const WorkerTypeSelectionScreen = ({ onComplete, onBack, onNavigateToLanguage })
       Alert.alert('Select Type', 'Please select your worker type to continue');
       return;
     }
-    onComplete(selectedType, selectedLanguage);
+    if (!selectedCity) {
+      Alert.alert('Select City', 'Please select your city to continue');
+      return;
+    }
+    onComplete(selectedType, selectedLanguage, selectedCity);
   };
 
   const handleLanguageButtonPress = () => {
     if (onNavigateToLanguage) {
       onNavigateToLanguage();
+    }
+  };
+  
+  const handleCityButtonPress = () => {
+    if (onNavigateToCity) {
+      onNavigateToCity();
     }
   };
 
@@ -96,15 +109,25 @@ const WorkerTypeSelectionScreen = ({ onComplete, onBack, onNavigateToLanguage })
             <Text style={styles.title}>{t('chooseProfile')}</Text>
           </View>
           
-          {/* Language Selector */}
+          {/* City Selector */}
+          <TouchableOpacity
+            style={styles.cityButton}
+            onPress={handleCityButtonPress}
+            activeOpacity={0.8}
+          >
+            <Icon name="location" size={18} color={COLORS.white} />
+            <Text style={styles.cityButtonText} numberOfLines={1}>
+              {displayCity}
+            </Text>
+          </TouchableOpacity>
+          
+          {/* Language Selector - Icon Only */}
           <TouchableOpacity
             style={styles.languageButton}
             onPress={handleLanguageButtonPress}
             activeOpacity={0.8}
           >
-             <MaterialIcon name="web" size={22} color={COLORS.white} />
-            <Text style={styles.languageButtonText}>{displayLanguage}</Text>
-            <Icon name="chevron-down" size={16} color={COLORS.white} />
+            <MaterialIcon name="web" size={20} color={COLORS.white} />
           </TouchableOpacity>
         </View>
       </View>
@@ -139,7 +162,7 @@ const WorkerTypeSelectionScreen = ({ onComplete, onBack, onNavigateToLanguage })
 
                   {/* Icon Container */}
                   <View style={[styles.typeIconContainer, { backgroundColor: `${type.color}15` }]}>
-                    <Icon name={type.icon} size={50} color={type.color} />
+                    <Icon name={type.icon} size={44} color={type.color} />
                   </View>
 
                   {/* Content */}
@@ -240,22 +263,34 @@ const styles = StyleSheet.create({
     color: COLORS.white,
   },
   languageButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.4)',
+    marginLeft: 8,
+  },
+  cityButton: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     backgroundColor: 'rgba(255,255,255,0.25)',
-    paddingHorizontal: 14,
-    paddingVertical: 9,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     borderRadius: 20,
     borderWidth: 1.5,
     borderColor: 'rgba(255,255,255,0.4)',
-    minWidth: 110,
+    maxWidth: 120,
   },
-  languageButtonText: {
+  cityButtonText: {
     color: COLORS.white,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
     letterSpacing: 0.3,
+    flex: 1,
   },
   content: {
     flex: 1,
@@ -288,6 +323,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.06,
     shadowRadius: 8,
     overflow: 'hidden',
+    height: 240,
   },
   typeCardSelected: {
     elevation: 10,
@@ -313,9 +349,9 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   typeIconContainer: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
@@ -346,9 +382,9 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   featuresContainer: {
-    gap: 6,
+    gap: 5,
     backgroundColor: '#f9fafb',
-    padding: 10,
+    padding: 8,
     borderRadius: 10,
     borderWidth: 1,
     borderColor: '#e5e7eb',

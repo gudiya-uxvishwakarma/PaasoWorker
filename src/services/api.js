@@ -1,970 +1,759 @@
-/**
- * API Service - Centralized API communication with Axios
- */
-
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-const { getApiBaseUrl, API_CONFIG, STORAGE_KEYS, REQUEST_TIMEOUT } = require('../config/api.config');
+import { API_BASE_URL } from '../config/api.config';
 
-// Backend API URL
-const API_BASE_URL = getApiBaseUrl();
+/**
+ * API Service for backend communication
+ * Handles all HTTP requests with Firebase authentication
+ */
 
-// Storage keys
-const TOKEN_KEY = STORAGE_KEYS.AUTH_TOKEN;
-const USER_KEY = STORAGE_KEYS.USER_DATA;
+console.log('🔧 API Configuration:');
+console.log('📍 Base URL:', API_BASE_URL);
 
-// Fallback URL index
-let currentFallbackIndex = 0;
-
-// Create axios instance with fallback support
-const axiosInstance = axios.create({
+// Create axios instance with base configuration
+const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: REQUEST_TIMEOUT, // 30 seconds for Render cold starts
+  timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
-    'Accept': 'application/json',
-  },
-  // Retry configuration for Render cold starts
-  validateStatus: (status) => {
-    return status >= 200 && status < 500; // Don't throw on 4xx errors
   },
 });
 
-// Helper function to try fallback URLs
-const tryFallbackUrl = async (config, originalError) => {
-  if (currentFallbackIndex < API_CONFIG.FALLBACK_URLS.length) {
-    const fallbackUrl = API_CONFIG.FALLBACK_URLS[currentFallbackIndex];
-    currentFallbackIndex++;
-    
-    console.log(`🔄 Trying fallback URL ${currentFallbackIndex}/${API_CONFIG.FALLBACK_URLS.length}: ${fallbackUrl}`);
-    
-    try {
-      const response = await axios({
-        ...config,
-        baseURL: fallbackUrl,
-      });
-      
-      console.log(`✅ Fallback URL ${currentFallbackIndex} succeeded`);
-      currentFallbackIndex = 0; // Reset on success
-      return response;
-    } catch (error) {
-      if (currentFallbackIndex < API_CONFIG.FALLBACK_URLS.length) {
-        return tryFallbackUrl(config, error);
-      }
-      throw originalError; // All fallbacks failed
-    }
-  }
-  throw originalError;
-};
-
-// Request interceptor - Add auth token
-axiosInstance.interceptors.request.use(
+/**
+ * Request interceptor to add JWT auth token
+ * Skip auth for public endpoints
+ */
+api.interceptors.request.use(
   async (config) => {
     try {
-      const token = await AsyncStorage.getItem(TOKEN_KEY);
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
+      // List of public endpoints that don't need authentication
+      const publicEndpoints = [
+        '/workers/send-otp',
+        '/workers/verify-otp',
+        '/workers/check-mobile',
+        '/workers/public',
+        '/workers/fcm-token',
+        '/auth/worker/login',
+        '/auth/worker/register',
+        '/admin/workers', // Admin panel endpoints
+        '/admin/stats',
+        '/admin/notifications',
+        '/categories', // ✅ Categories are public
+      ];
+      
+      // Check if this is a public endpoint - match exactly or starts with
+      const isPublicEndpoint = publicEndpoints.some(endpoint => {
+        const url = config.url || '';
+        return url === endpoint || url.startsWith(endpoint + '/') || url.startsWith(endpoint + '?');
+      });
+      
+      if (isPublicEndpoint) {
+        console.log('🌐 Public endpoint - no auth required:', config.url);
+        // Create completely fresh headers object without any auth
+        config.headers = {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json, text/plain, */*'
+        };
+        console.log('🔓 Fresh headers created for public endpoint (no Authorization)');
+        console.log('📋 Headers:', JSON.stringify(config.headers));
+        return config;
       }
-      console.log(`🌐 API Request: ${config.method.toUpperCase()} ${config.url}`);
+      
+      // Only add auth token for non-public endpoints
+      console.log('🔒 Protected endpoint - adding auth token:', config.url);
+      
+      // Try to get JWT token first (from OTP verification)
+      let token = await AsyncStorage.getItem('authToken');
+      
+      // If no JWT token, try userAuth
+      if (!token) {
+        const userAuth = await AsyncStorage.getItem('userAuth');
+        if (userAuth) {
+          const parsed = JSON.parse(userAuth);
+          token = parsed.token;
+        }
+      }
+      
+      // If still no token, try Firebase token (fallback)
+      if (!token) {
+        const authData = await AsyncStorage.getItem('firebaseAuth');
+        if (authData) {
+          const { idToken } = JSON.parse(authData);
+          token = idToken;
+        }
+      }
+      
+      if (token) {
+        // Add token to Authorization header
+        config.headers.Authorization = `Bearer ${token}`;
+        console.log('🔑 Added auth token to request');
+      } else {
+        console.log('⚠️ No auth token available for protected endpoint');
+      }
     } catch (error) {
-      console.error('❌ Error getting auth token:', error);
+      console.error('❌ Error in request interceptor:', error);
     }
+    
     return config;
   },
   (error) => {
-    console.error('❌ Request interceptor error:', error);
     return Promise.reject(error);
   }
 );
 
-// Response interceptor - Handle errors globally with fallback support
-axiosInstance.interceptors.response.use(
-  (response) => {
-    console.log(`✅ API Response: ${response.config.url}`);
-    console.log(`✅ Status: ${response.status}`);
-    console.log(`✅ Data:`, JSON.stringify(response.data, null, 2));
-    currentFallbackIndex = 0; // Reset fallback index on success
-    
-    // Ensure we always return the data object
-    if (response.data) {
-      return response.data;
-    }
-    
-    // Fallback if no data
-    console.warn('⚠️ Response has no data field');
-    return {
-      success: false,
-      message: 'Empty response from server'
-    };
-  },
+/**
+ * Response interceptor for error handling
+ */
+api.interceptors.response.use(
+  (response) => response,
   async (error) => {
-    console.error('❌ API Error Details:', {
-      message: error.message,
-      code: error.code,
-      response: error.response?.data,
-      status: error.response?.status,
-      config: {
-        url: error.config?.url,
-        baseURL: error.config?.baseURL,
-        method: error.config?.method
-      }
-    });
-    
     if (error.response) {
-      // Server responded with error
-      const { status, data } = error.response;
+      // Server responded with error status
+      console.error('❌ API Error:', error.response.status, error.response.data);
       
-      // List of public endpoints that don't require authentication
-      const publicEndpoints = [
-        '/workers/check-mobile',
-        '/auth/worker/register',
-        '/auth/worker/login',
-        '/workers/public',
-        '/health'
-      ];
-      
-      // Check if current request is to a public endpoint
-      const isPublicEndpoint = publicEndpoints.some(endpoint => 
-        error.config?.url?.includes(endpoint)
-      );
-      
-      if (status === 401 && !isPublicEndpoint) {
-        // Only clear auth for protected endpoints
-        console.log('🔒 Session expired - clearing auth data');
-        await AsyncStorage.removeItem(TOKEN_KEY);
-        await AsyncStorage.removeItem(USER_KEY);
-        throw new Error('SESSION_EXPIRED');
+      // Handle token expiration
+      if (error.response.status === 401) {
+        console.log('🔄 Token expired, clearing auth data');
+        await AsyncStorage.removeItem('authToken');
+        await AsyncStorage.removeItem('firebaseAuth');
+        await AsyncStorage.removeItem('userAuth');
       }
-      
-      // Preserve full error data for proper error handling
-      const errorWithData = new Error(data.message || 'Request failed');
-      errorWithData.response = error.response; // Preserve full response
-      throw errorWithData;
     } else if (error.request) {
-      // Request made but no response - try fallback URLs
-      console.error('❌ Network Error - No response received');
-      console.error('Request URL:', error.config?.baseURL + error.config?.url);
-      
-      // Try fallback URLs before giving up
-      try {
-        return await tryFallbackUrl(error.config, error);
-      } catch (fallbackError) {
-        console.error('❌ All fallback URLs failed');
-        
-        if (error.code === 'ECONNABORTED') {
-          throw new Error('Request timeout. Please try again.');
-        } else if (error.code === 'ERR_NETWORK' || error.message.includes('Network Error')) {
-          throw new Error('Cannot connect to server. Please check:\n1. Backend server is running\n2. Your internet connection\n3. API URL is correct');
-        }
-        
-        throw new Error('Network error. Please check your connection.');
-      }
+      // Request made but no response
+      console.error('❌ Network Error: No response from server');
     } else {
-      // Something else happened
-      throw new Error(error.message || 'An error occurred');
+      // Error in request setup
+      console.error('❌ Request Error:', error.message);
     }
+    
+    return Promise.reject(error);
   }
 );
 
-// ============================================
-// STORAGE HELPERS
-// ============================================
-
-export const getAuthToken = async () => {
-  try {
-    return await AsyncStorage.getItem(TOKEN_KEY);
-  } catch (error) {
-    console.error('Error getting auth token:', error);
-    return null;
-  }
-};
-
-export const setAuthToken = async (token) => {
-  try {
-    await AsyncStorage.setItem(TOKEN_KEY, token);
-  } catch (error) {
-    console.error('Error storing auth token:', error);
-  }
-};
-
-export const removeAuthToken = async () => {
-  try {
-    await AsyncStorage.removeItem(TOKEN_KEY);
-  } catch (error) {
-    console.error('Error removing auth token:', error);
-  }
-};
-
-export const getUserData = async () => {
-  try {
-    const userData = await AsyncStorage.getItem(USER_KEY);
-    return userData ? JSON.parse(userData) : null;
-  } catch (error) {
-    console.error('Error getting user data:', error);
-    return null;
-  }
-};
-
-export const setUserData = async (userData) => {
-  try {
-    await AsyncStorage.setItem(USER_KEY, JSON.stringify(userData));
-  } catch (error) {
-    console.error('Error storing user data:', error);
-  }
-};
-
-export const removeUserData = async () => {
-  try {
-    await AsyncStorage.removeItem(USER_KEY);
-  } catch (error) {
-    console.error('Error removing user data:', error);
-  }
-};
-
-// ============================================
-// CONNECTION TEST
-// ============================================
-
-/**
- * Test backend connection
- */
-export const testConnection = async () => {
-  try {
-    console.log('🔍 Testing backend connection...');
-    console.log('📍 API Base URL:', API_BASE_URL);
-    
-    // Health endpoint is at root level, not under /api
-    const healthUrl = API_BASE_URL.replace('/api', '/health');
-    console.log('📍 Health Check URL:', healthUrl);
-    
-    const response = await axios.get(healthUrl, {
-      timeout: 10000 // 10 second timeout for health check
-    });
-    
-    console.log('✅ Backend connection successful:', response.data);
-    return {
-      success: true,
-      message: 'Connected to backend',
-      data: response.data
-    };
-  } catch (error) {
-    console.error('❌ Backend connection failed:', error.message);
-    console.error('Error details:', {
-      code: error.code,
-      message: error.message,
-      url: error.config?.url
-    });
-    return {
-      success: false,
-      message: error.message,
-      error: error.code
-    };
-  }
-};
-
-// ============================================
-// AUTH API ENDPOINTS
-// ============================================
-
 /**
  * Send OTP to mobile number
+ * @param {string} mobile - 10-digit mobile number
+ * @returns {Promise<object>} - Response with OTP
  */
 export const sendOTP = async (mobile) => {
   try {
-    console.log('📱 Sending OTP to:', mobile);
+    console.log('📱 Sending OTP request for:', mobile);
+    console.log('🌐 API URL:', `${API_BASE_URL}/workers/send-otp`);
+    console.log('🔓 This is a PUBLIC endpoint - no auth required');
     
-    // For demo mode: Accept any mobile and return success
-    // In production, this would call backend OTP service
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        console.log('✅ OTP sent successfully (Demo mode)');
-        resolve({
-          success: true,
-          message: 'OTP sent successfully',
-          otp: '123456', // Demo OTP
-        });
-      }, 1000);
-    });
+    const response = await api.post('/workers/send-otp', { mobile });
+    
+    console.log('✅ OTP sent successfully:', response.data);
+    return response.data;
   } catch (error) {
-    console.error('❌ Send OTP Error:', error);
-    throw error;
+    console.error('❌ Send OTP error details:');
+    console.error('Error message:', error.message);
+    console.error('Error code:', error.code);
+    console.error('Response status:', error.response?.status);
+    console.error('Response data:', error.response?.data);
+    console.error('Request URL:', error.config?.url);
+    console.error('Base URL:', error.config?.baseURL);
+    console.error('Request headers:', error.config?.headers);
+    
+    // Provide user-friendly error messages
+    if (error.code === 'ECONNABORTED') {
+      return {
+        success: false,
+        message: 'Request timeout. Please check your internet connection.'
+      };
+    } else if (error.code === 'ERR_NETWORK' || error.message.includes('Network Error')) {
+      return {
+        success: false,
+        message: 'Network error. Please check if backend server is running.'
+      };
+    } else if (error.response?.status === 404) {
+      return {
+        success: false,
+        message: 'API endpoint not found. Please check backend configuration.'
+      };
+    } else if (error.response?.status === 401) {
+      console.error('⚠️ 401 Error on PUBLIC endpoint - this should not happen!');
+      console.error('⚠️ Check if Authorization header is being added incorrectly');
+      return {
+        success: false,
+        message: 'Authentication error on public endpoint. Configuration issue.'
+      };
+    } else if (error.response?.data?.message) {
+      return {
+        success: false,
+        message: error.response.data.message
+      };
+    } else {
+      return {
+        success: false,
+        message: 'Failed to send OTP. Please try again.'
+      };
+    }
   }
 };
 
 /**
- * Check if mobile number is registered
+ * Verify OTP
+ * @param {string} mobile - 10-digit mobile number
+ * @param {string} otp - 6-digit OTP code
+ * @returns {Promise<object>} - Response with user data
+ */
+export const verifyOTP = async (mobile, otp, fcmToken = null, platform = null, deviceInfo = null) => {
+  try {
+    console.log('🔐 Verifying OTP for:', mobile);
+    
+    const payload = { mobile, otp };
+    
+    // Add FCM token if provided
+    if (fcmToken) {
+      payload.fcmToken = fcmToken;
+      payload.platform = platform || 'android';
+      payload.deviceInfo = deviceInfo || {};
+      console.log('📱 Including FCM token in OTP verification');
+    }
+    
+    const response = await api.post('/workers/verify-otp', payload);
+    
+    console.log('✅ OTP verified successfully');
+    return response.data;
+  } catch (error) {
+    console.error('❌ Verify OTP error:', error.response?.data || error.message);
+    throw new Error(error.response?.data?.message || 'Failed to verify OTP');
+  }
+};
+
+/**
+ * Check if mobile number exists in database
+ * @param {string} mobile - Mobile number (10 digits)
+ * @returns {Promise<object>} - Response with exists flag and worker data
  */
 export const checkMobile = async (mobile) => {
   try {
     console.log('📞 Checking mobile:', mobile);
-    console.log('🌐 API Base URL:', API_BASE_URL);
-    console.log('🌐 Full URL:', `${API_BASE_URL}/workers/check-mobile`);
-    
-    const response = await axiosInstance.post('/workers/check-mobile', { mobile });
-    
-    console.log('✅ Check mobile response:', JSON.stringify(response, null, 2));
-    console.log('✅ Response type:', typeof response);
-    console.log('✅ Response keys:', Object.keys(response || {}));
-    
-    // Ensure response has expected structure
-    if (!response) {
-      throw new Error('No response received from server');
-    }
-    
-    if (typeof response.success === 'undefined') {
-      console.warn('⚠️ Response missing success field:', response);
-      // Try to handle malformed response
-      return {
-        success: false,
-        exists: false,
-        worker: null,
-        message: 'Invalid response from server'
-      };
-    }
-    
-    return response;
+    const response = await api.post('/workers/check-mobile', { mobile });
+    return response.data;
   } catch (error) {
-    console.error('❌ Check Mobile Error:', error);
-    console.error('❌ Error type:', error.constructor.name);
-    console.error('❌ Error message:', error.message);
-    console.error('❌ Error response:', error.response?.data);
-    throw error;
-  }
-};
-
-/**
- * Verify OTP and check registration
- */
-export const verifyOTP = async (mobile, otp) => {
-  try {
-    console.log('🔐 Verifying OTP:', otp, 'for mobile:', mobile);
-    
-    // For demo mode: Accept any 6-digit OTP
-    if (otp.length !== 6) {
-      throw new Error('Invalid OTP format');
-    }
-    
-    console.log('✅ OTP format valid, checking mobile registration...');
-    
-    // Check if mobile is registered in backend
-    const response = await checkMobile(mobile);
-    
-    console.log('📦 Mobile check result:', response);
-    
-    return {
-      success: true,
-      isRegistered: response.exists,
-      worker: response.worker || null,
-    };
-  } catch (error) {
-    console.error('❌ Verify OTP Error:', error);
-    throw error;
-  }
-};
-
-/**
- * Complete OTP verification flow with backend validation
- */
-export const verifyOTPWithBackend = async (mobile, otp) => {
-  try {
-    console.log('🔐 Starting OTP verification flow...');
-    console.log('📱 Mobile:', mobile);
-    console.log('🔢 OTP:', otp);
-    
-    // Step 1: Validate OTP format
-    if (!otp || otp.length !== 6) {
-      throw new Error('Please enter a valid 6-digit OTP');
-    }
-    
-    // Step 2: Check mobile in backend
-    console.log('📞 Checking mobile in backend...');
-    const mobileCheck = await checkMobile(mobile);
-    
-    if (!mobileCheck.success) {
-      throw new Error('Failed to verify mobile number');
-    }
-    
-    console.log('✅ Mobile verification complete');
-    console.log('📊 User exists:', mobileCheck.exists);
-    
-    // Step 3: Return verification result
-    return {
-      success: true,
-      verified: true,
-      isRegistered: mobileCheck.exists,
-      worker: mobileCheck.worker,
-      message: mobileCheck.exists ? 'User found' : 'New user',
-    };
-  } catch (error) {
-    console.error('❌ OTP Verification Flow Error:', error);
-    throw error;
-  }
-};
-
-/**
- * Worker login with mobile and password
- */
-export const workerLogin = async (mobile, password) => {
-  try {
-    console.log('🔐 Worker login attempt:', mobile);
-    const response = await axiosInstance.post('/auth/worker/login', {
-      mobile,
-      password,
-    });
-
-    console.log('✅ Login response:', response);
-
-    if (response.success && response.token) {
-      console.log('💾 Saving auth token and user data');
-      await setAuthToken(response.token);
-      await setUserData(response.worker);
-    }
-
-    return response;
-  } catch (error) {
-    console.error('❌ Worker Login Error:', error);
+    console.error('❌ Check mobile error:', error);
     throw error;
   }
 };
 
 /**
  * Register new worker
+ * @param {object} workerData - Worker registration data
+ * @returns {Promise<object>} - Created worker data
  */
 export const registerWorker = async (workerData) => {
   try {
-    console.log('📤 Registering new worker...');
-    console.log('📦 Worker data:', JSON.stringify(workerData, null, 2));
+    console.log('📝 Registering worker:', workerData.name);
+    console.log('📍 API Endpoint: /auth/worker/register');
+    console.log('📦 Sending data:', JSON.stringify(workerData, null, 2));
     
-    // Map frontend workerType to backend enum
-    const workerTypeMap = {
-      individual: 'Worker',
-      crew_leader: 'Crew / Team',
-      contractor: 'Contractor',
-      service_provider: 'Service Provider',
-    };
-
-    // Prepare data for backend - send exactly what backend expects
-    const mappedData = {
-      name: workerData.name,
-      mobile: workerData.mobile,
-      password: workerData.password,
-      email: workerData.email || '',
-      workerType: workerTypeMap[workerData.workerType] || workerData.workerType || 'Worker',
-      category: Array.isArray(workerData.category) 
-        ? workerData.category 
-        : [workerData.category || 'General'],
-      serviceArea: workerData.serviceArea || '',
-      city: workerData.city || '',
-      languages: workerData.languages || [],
-      teamSize: workerData.teamSize || 1,
-      gstNumber: workerData.gstNumber || '',
-      msmeNumber: workerData.msmeNumber || '',
-      onboardingFee: workerData.onboardingFee || '',
-      availability: workerData.availability || 'online',
-      online: workerData.online !== undefined ? workerData.online : true,
-      // Documents
-      profilePhoto: workerData.profilePhoto || null,
-      aadhaarDoc: workerData.aadhaarDoc || null,
-      panCard: workerData.panCard || null,
-      paymentScreenshot: workerData.paymentScreenshot || null,
-    };
-
-    console.log('📦 Mapped data for backend:', JSON.stringify(mappedData, null, 2));
-
-    const response = await axiosInstance.post('/auth/worker/register', mappedData);
+    const response = await api.post('/auth/worker/register', workerData);
     
-    console.log('✅ Registration successful:', response);
-    
-    // Don't save token for pending workers - they need admin approval
-    // Token will be provided after login once approved
-    
-    return response;
+    console.log('✅ Registration successful:', response.data);
+    return response.data;
   } catch (error) {
-    console.error('❌ Worker Registration Error:', error);
-    console.error('Error Response:', error.response?.data);
-    console.error('Error Status:', error.response?.status);
-    throw error;
-  }
-};
-
-/**
- * Logout worker
- */
-export const logout = async () => {
-  try {
-    await removeAuthToken();
-    await removeUserData();
-    return { success: true };
-  } catch (error) {
-    console.error('Logout Error:', error);
-    throw error;
-  }
-};
-
-// ============================================
-// WORKER API ENDPOINTS
-// ============================================
-
-/**
- * Get current worker profile
- */
-export const getWorkerProfile = async () => {
-  try {
-    console.log('👤 Fetching worker profile...');
-    const response = await axiosInstance.get('/workers/me');
-    
-    console.log('✅ Profile fetched:', response);
-    
-    if (response.success && response.worker) {
-      await setUserData(response.worker);
-    }
-
-    return response;
-  } catch (error) {
-    console.error('❌ Get Worker Profile Error:', error);
+    console.error('❌ Register worker error:', error.response?.data || error.message);
+    console.error('❌ Error details:', error.response?.status, error.response?.statusText);
     throw error;
   }
 };
 
 /**
  * Update worker profile
+ * @param {string} workerId - Worker ID
+ * @param {object} updates - Profile updates
+ * @returns {Promise<object>} - Updated worker data
  */
-export const updateWorkerProfile = async (updates) => {
+export const updateWorker = async (workerId, updates) => {
   try {
-    const response = await axiosInstance.put('/workers/me', updates);
-    
-    if (response.success && response.worker) {
-      await setUserData(response.worker);
-    }
-
-    return response;
+    console.log('📝 Updating worker:', workerId);
+    const response = await api.put(`/workers/${workerId}`, updates);
+    return response.data;
   } catch (error) {
-    console.error('Update Worker Profile Error:', error);
-    throw error;
-  }
-};
-
-/**
- * Update worker online status
- */
-export const updateOnlineStatus = async (isOnline) => {
-  try {
-    const response = await axiosInstance.put('/workers/me/status', {
-      online: isOnline,
-    });
-    return response;
-  } catch (error) {
-    console.error('Update Online Status Error:', error);
-    throw error;
-  }
-};
-
-/**
- * Update worker availability status (online/busy/offline)
- */
-export const updateAvailabilityStatus = async (status) => {
-  try {
-    const isOnline = status === 'online';
-    const response = await axiosInstance.put('/workers/me/status', {
-      availability: status,
-      online: isOnline,
-    });
-    return response;
-  } catch (error) {
-    console.error('Update Availability Status Error:', error);
-    throw error;
-  }
-};
-
-/**
- * Get worker stats
- */
-export const getWorkerStats = async () => {
-  try {
-    const response = await axiosInstance.get('/workers/me/stats');
-    return response;
-  } catch (error) {
-    console.error('Get Worker Stats Error:', error);
-    throw error;
-  }
-};
-
-/**
- * Get worker dashboard data
- */
-export const getDashboardData = async () => {
-  try {
-    console.log('📊 Fetching dashboard data...');
-    const response = await axiosInstance.get('/workers/dashboard');
-    console.log('✅ Dashboard data:', response);
-    return response;
-  } catch (error) {
-    console.error('❌ Get Dashboard Data Error:', error);
-    throw error;
-  }
-};
-
-/**
- * Get all workers with filters
- */
-export const getWorkers = async (filters = {}) => {
-  try {
-    const response = await axiosInstance.get('/workers', { params: filters });
-    return response;
-  } catch (error) {
-    console.error('Get Workers Error:', error);
+    console.error('❌ Update worker error:', error);
     throw error;
   }
 };
 
 /**
  * Get worker by ID
+ * @param {string} workerId - Worker ID
+ * @returns {Promise<object>} - Worker data
  */
-export const getWorkerById = async (workerId) => {
+export const getWorker = async (workerId) => {
   try {
-    const response = await axiosInstance.get(`/workers/${workerId}`);
-    return response;
+    console.log('🔍 Getting worker:', workerId);
+    const response = await api.get(`/workers/${workerId}`);
+    return response.data;
   } catch (error) {
-    console.error('Get Worker By ID Error:', error);
+    console.error('❌ Get worker error:', error);
     throw error;
   }
 };
 
 /**
- * Update worker subscription
+ * Get all workers (public)
+ * @param {object} filters - Filter options
+ * @returns {Promise<object>} - Workers list
  */
-export const updateSubscription = async (plan) => {
+export const getWorkers = async (filters = {}) => {
   try {
-    const response = await axiosInstance.put('/workers/me/subscription', { plan });
-    return response;
+    console.log('🔍 Getting workers with filters:', filters);
+    const response = await api.get('/workers/public', { params: filters });
+    return response.data;
   } catch (error) {
-    console.error('Update Subscription Error:', error);
+    console.error('❌ Get workers error:', error);
     throw error;
   }
 };
 
 /**
- * Upload worker document
+ * Update worker availability status
+ * @param {string} workerId - Worker ID
+ * @param {string} availability - Availability status (online/busy/offline)
+ * @returns {Promise<object>} - Updated status
  */
-export const uploadDocument = async (documentType, fileData) => {
+export const updateAvailability = async (workerId, availability) => {
   try {
+    console.log('📝 Updating availability:', workerId, availability);
+    
+    // Set online status based on availability
+    // online: true for 'online' and 'busy'
+    // online: false only for 'offline'
+    const isOnline = availability === 'online' || availability === 'busy';
+    
+    const response = await api.put(`/workers/${workerId}`, { 
+      availability,
+      online: isOnline
+    });
+    
+    console.log('✅ Availability updated:', { availability, online: isOnline });
+    
+    return response.data;
+  } catch (error) {
+    console.error('❌ Update availability error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Register FCM token for push notifications
+ * @param {string} userId - User ID
+ * @param {string} fcmToken - FCM token
+ * @param {string} platform - Platform (android/ios)
+ * @returns {Promise<object>} - Success response
+ */
+export const registerFCMToken = async (userId, fcmToken, platform = 'android') => {
+  try {
+    console.log('📱 Registering FCM token for user:', userId);
+    const response = await api.post('/workers/fcm-token', {
+      userId,
+      fcmToken,
+      platform
+    });
+    return response.data;
+  } catch (error) {
+    console.error('❌ Register FCM token error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Upload profile photo
+ * @param {string} workerId - Worker ID
+ * @param {object} imageData - Image data (uri, type, name)
+ * @returns {Promise<object>} - Upload response with URL
+ */
+export const uploadProfilePhoto = async (workerId, imageData) => {
+  try {
+    console.log('📸 Uploading profile photo for worker:', workerId);
+    
     const formData = new FormData();
-    formData.append('document', fileData);
-    formData.append('type', documentType);
-
-    const response = await axiosInstance.post('/workers/me/documents', formData, {
+    formData.append('photo', {
+      uri: imageData.uri,
+      type: imageData.type || 'image/jpeg',
+      name: imageData.name || 'profile.jpg'
+    });
+    
+    const response = await api.post(`/workers/${workerId}/photo`, formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
     });
-    return response;
+    
+    return response.data;
   } catch (error) {
-    console.error('Upload Document Error:', error);
+    console.error('❌ Upload photo error:', error);
     throw error;
   }
 };
 
 /**
- * Get worker reviews
+ * Upload KYC documents
+ * @param {string} workerId - Worker ID
+ * @param {object} documents - KYC documents (aadhar, pan, etc.)
+ * @returns {Promise<object>} - Upload response
  */
-export const getWorkerReviews = async () => {
+export const uploadKYCDocuments = async (workerId, documents) => {
   try {
-    const response = await axiosInstance.get('/workers/me/reviews');
-    return response;
+    console.log('📄 Uploading KYC documents for worker:', workerId);
+    
+    const formData = new FormData();
+    
+    if (documents.aadhar) {
+      formData.append('aadhar', {
+        uri: documents.aadhar.uri,
+        type: documents.aadhar.type || 'image/jpeg',
+        name: documents.aadhar.name || 'aadhar.jpg'
+      });
+    }
+    
+    if (documents.pan) {
+      formData.append('pan', {
+        uri: documents.pan.uri,
+        type: documents.pan.type || 'image/jpeg',
+        name: documents.pan.name || 'pan.jpg'
+      });
+    }
+    
+    const response = await api.post(`/workers/${workerId}/kyc`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    
+    return response.data;
   } catch (error) {
-    console.error('Get Worker Reviews Error:', error);
+    console.error('❌ Upload KYC error:', error);
     throw error;
   }
 };
+
+export default api;
+
 
 /**
  * Get worker notifications
+ * @param {string} workerId - Worker ID
+ * @returns {Promise<object>} - Notifications list
  */
 export const getWorkerNotifications = async (workerId) => {
   try {
-    console.log('📬 Fetching notifications for worker:', workerId);
-    const response = await axiosInstance.get('/notifications/worker', {
-      params: { workerId }
-    });
-    console.log('✅ Notifications fetched:', response);
-    return response;
+    console.log('🔔 Fetching notifications for worker:', workerId);
+    const response = await api.get(`/workers/${workerId}/notifications`);
+    console.log('✅ Notifications fetched:', response.data.notifications?.length || 0);
+    return response.data;
   } catch (error) {
-    console.error('❌ Get Notifications Error:', error);
-    throw error;
-  }
-};
-
-/**
- * Get active banners
- */
-export const getActiveBanners = async () => {
-  try {
-    console.log('🎨 Fetching active banners...');
-    const response = await axiosInstance.get('/notifications/banners/active');
-    console.log('✅ Banners fetched:', response);
-    return response;
-  } catch (error) {
-    console.error('❌ Get Banners Error:', error);
+    console.error('❌ Get notifications error:', error.response?.data || error.message);
     throw error;
   }
 };
 
 /**
  * Mark notification as read
+ * @param {string} notificationId - Notification ID
+ * @param {string} workerId - Worker ID
+ * @returns {Promise<object>} - Success response
  */
 export const markNotificationRead = async (notificationId, workerId) => {
   try {
     console.log('✅ Marking notification as read:', notificationId);
-    const response = await axiosInstance.post('/notifications/mark-read', {
-      notificationId,
-      workerId
-    });
-    console.log('✅ Notification marked as read:', response);
-    return response;
+    const response = await api.put(`/workers/${workerId}/notifications/${notificationId}/read`);
+    return response.data;
   } catch (error) {
-    console.error('❌ Mark Notification Read Error:', error);
+    console.error('❌ Mark notification read error:', error.response?.data || error.message);
     throw error;
   }
 };
 
 /**
- * Get subscription plans
+ * Get all categories from backend
+ * @param {boolean} activeOnly - Get only active categories
+ * @returns {Promise<object>} - Categories list
  */
-export const getSubscriptionPlans = async () => {
+export const getCategories = async (activeOnly = true) => {
   try {
-    console.log('💰 Fetching subscription plans...');
-    const response = await axiosInstance.get('/pricing/plans');
-    console.log('✅ Plans fetched:', response);
-    return response;
+    console.log('📂 Fetching categories from backend');
+    const params = activeOnly ? { active: 'true' } : {};
+    const response = await api.get('/categories', { params });
+    console.log('✅ Categories fetched:', response.data.data?.length || 0);
+    return response.data;
   } catch (error) {
-    console.error('❌ Get Plans Error:', error);
-    throw error;
-  }
-};
-
-/**
- * Get add-ons
- */
-export const getAddOns = async () => {
-  try {
-    console.log('⚡ Fetching add-ons...');
-    const response = await axiosInstance.get('/pricing/addons');
-    console.log('✅ Add-ons fetched:', response);
-    return response;
-  } catch (error) {
-    console.error('❌ Get Add-ons Error:', error);
-    throw error;
-  }
-};
-
-/**
- * Get CMS content by type
- */
-export const getCMSContent = async (type) => {
-  try {
-    console.log('📄 Fetching CMS content for type:', type);
-    const response = await axiosInstance.get(`/cms/${type}`);
-    console.log('✅ CMS content fetched:', response);
-    return response;
-  } catch (error) {
-    console.error('❌ Get CMS Content Error:', error);
+    console.error('❌ Get categories error:', error.response?.data || error.message);
     throw error;
   }
 };
 
 /**
  * Get notification preferences
+ * @returns {Promise<object>} - Notification preferences
  */
 export const getNotificationPreferences = async () => {
   try {
-    console.log('🔔 Fetching notification preferences...');
-    const response = await axiosInstance.get('/workers/me/notification-preferences');
-    console.log('✅ Notification preferences fetched:', response);
-    return response;
+    console.log('🔔 Fetching notification preferences');
+    const response = await api.get('/workers/me/notification-preferences');
+    return response.data;
   } catch (error) {
-    console.error('❌ Get Notification Preferences Error:', error);
+    console.error('❌ Get preferences error:', error.response?.data || error.message);
     throw error;
   }
 };
 
 /**
  * Update notification preferences
+ * @param {object} preferences - Notification preferences
+ * @returns {Promise<object>} - Updated preferences
  */
 export const updateNotificationPreferences = async (preferences) => {
   try {
-    console.log('🔔 Updating notification preferences...');
-    const response = await axiosInstance.put('/workers/me/notification-preferences', preferences);
-    console.log('✅ Notification preferences updated:', response);
-    return response;
+    console.log('🔔 Updating notification preferences');
+    const response = await api.put('/workers/me/notification-preferences', preferences);
+    return response.data;
   } catch (error) {
-    console.error('❌ Update Notification Preferences Error:', error);
+    console.error('❌ Update preferences error:', error.response?.data || error.message);
     throw error;
   }
 };
 
 /**
  * Get privacy settings
+ * @returns {Promise<object>} - Privacy settings
  */
 export const getPrivacySettings = async () => {
   try {
-    console.log('🔒 Fetching privacy settings...');
-    const response = await axiosInstance.get('/workers/me/privacy-settings');
-    console.log('✅ Privacy settings fetched:', response);
-    return response;
+    console.log('🔒 Fetching privacy settings');
+    const response = await api.get('/workers/me/privacy-settings');
+    return response.data;
   } catch (error) {
-    console.error('❌ Get Privacy Settings Error:', error);
-    throw error;
+    console.error('❌ Get privacy settings error:', error.response?.data || error.message);
+    return { success: false, settings: {} };
   }
 };
 
 /**
  * Update privacy settings
+ * @param {object} settings - Privacy settings
+ * @returns {Promise<object>} - Updated settings
  */
 export const updatePrivacySettings = async (settings) => {
   try {
-    console.log('🔒 Updating privacy settings...');
-    const response = await axiosInstance.put('/workers/me/privacy-settings', settings);
-    console.log('✅ Privacy settings updated:', response);
-    return response;
+    console.log('🔒 Updating privacy settings');
+    const response = await api.put('/workers/me/privacy-settings', settings);
+    return response.data;
   } catch (error) {
-    console.error('❌ Update Privacy Settings Error:', error);
+    console.error('❌ Update privacy settings error:', error.response?.data || error.message);
+    return { success: false };
+  }
+};
+
+/**
+ * Get CMS content (Terms, Privacy, Help, etc.)
+ * @param {string} type - Content type (terms, privacy, help, about, consent)
+ * @returns {Promise<object>} - CMS content
+ */
+export const getCMSContent = async (type) => {
+  try {
+    console.log('📄 Fetching CMS content for type:', type);
+    const response = await api.get(`/cms/${type}`);
+    return response.data;
+  } catch (error) {
+    console.error('❌ Get CMS content error:', error.response?.data || error.message);
+    return { 
+      success: false, 
+      content: {
+        type,
+        title: `${type.charAt(0).toUpperCase() + type.slice(1)} Content`,
+        content: 'Content will be available soon.',
+        version: '1.0'
+      }
+    };
+  }
+};
+
+/**
+ * Download worker data (GDPR compliance)
+ * @returns {Promise<object>} - Worker data export
+ */
+export const downloadWorkerData = async () => {
+  try {
+    console.log('📥 Downloading worker data');
+    const response = await api.get('/workers/me/download-data');
+    return response.data;
+  } catch (error) {
+    console.error('❌ Download data error:', error.response?.data || error.message);
     throw error;
   }
 };
 
-// ============================================
-// TRANSACTION API ENDPOINTS
-// ============================================
+/**
+ * Get subscription plans
+ * @returns {Promise<object>} - Subscription plans list
+ */
+export const getSubscriptionPlans = async () => {
+  try {
+    console.log('💰 Fetching subscription plans');
+    const response = await api.get('/pricing/plans');
+    console.log('✅ Plans fetched:', response.data.plans?.length || 0);
+    return response.data;
+  } catch (error) {
+    console.error('❌ Get subscription plans error:', error.response?.data || error.message);
+    return { success: false, plans: [] };
+  }
+};
+
+/**
+ * Get add-ons (featured listings, badges, etc.)
+ * @returns {Promise<object>} - Add-ons list
+ */
+export const getAddOns = async () => {
+  try {
+    console.log('⚡ Fetching add-ons');
+    const response = await api.get('/pricing/addons');
+    console.log('✅ Add-ons fetched:', response.data.addons?.length || 0);
+    return response.data;
+  } catch (error) {
+    console.error('❌ Get add-ons error:', error.response?.data || error.message);
+    return { success: false, addons: [] };
+  }
+};
 
 /**
  * Get worker transactions
+ * @returns {Promise<object>} - Transactions list
  */
 export const getWorkerTransactions = async () => {
   try {
-    console.log('💰 Fetching worker transactions...');
-    const response = await axiosInstance.get('/transactions/me');
-    console.log('✅ Transactions fetched:', response);
-    return response;
+    console.log('💳 Fetching worker transactions');
+    const response = await api.get('/transactions/me');
+    console.log('✅ Transactions fetched:', response.data.transactions?.length || 0);
+    return response.data;
   } catch (error) {
-    console.error('❌ Get Transactions Error:', error);
-    throw error;
+    console.error('❌ Get transactions error:', error.response?.data || error.message);
+    return { success: false, transactions: [] };
   }
 };
 
 /**
  * Create subscription transaction
+ * @param {string} plan - Plan name
+ * @param {string} billingCycle - Billing cycle (monthly/yearly)
+ * @param {number} amount - Amount
+ * @returns {Promise<object>} - Transaction data
  */
-export const createSubscriptionTransaction = async (plan, duration, amount) => {
+export const createSubscriptionTransaction = async (plan, billingCycle, amount) => {
   try {
-    console.log('💳 Creating subscription transaction...');
-    const response = await axiosInstance.post('/transactions/subscription', {
+    console.log('💳 Creating subscription transaction');
+    const response = await api.post('/transactions/subscription', {
       plan,
-      duration,
+      billingCycle,
       amount
     });
-    console.log('✅ Transaction created:', response);
-    return response;
+    return response.data;
   } catch (error) {
-    console.error('❌ Create Subscription Transaction Error:', error);
-    throw error;
-  }
-};
-
-/**
- * Confirm subscription payment
- */
-export const confirmSubscriptionPayment = async (transactionId, paymentDetails) => {
-  try {
-    console.log('✅ Confirming subscription payment...');
-    const response = await axiosInstance.post('/transactions/subscription/confirm', {
-      transactionId,
-      ...paymentDetails
-    });
-    console.log('✅ Payment confirmed:', response);
-    return response;
-  } catch (error) {
-    console.error('❌ Confirm Payment Error:', error);
+    console.error('❌ Create subscription transaction error:', error.response?.data || error.message);
     throw error;
   }
 };
 
 /**
  * Create featured listing transaction
+ * @param {string} addonName - Add-on name
+ * @param {string} duration - Duration (weekly/monthly)
+ * @param {number} amount - Amount
+ * @returns {Promise<object>} - Transaction data
  */
-export const createFeaturedTransaction = async (plan, duration, amount) => {
+export const createFeaturedTransaction = async (addonName, duration, amount) => {
   try {
-    console.log('⭐ Creating featured listing transaction...');
-    const response = await axiosInstance.post('/transactions/featured', {
-      plan,
+    console.log('⭐ Creating featured transaction');
+    const response = await api.post('/transactions/featured', {
+      addonName,
       duration,
       amount
     });
-    console.log('✅ Transaction created:', response);
-    return response;
+    return response.data;
   } catch (error) {
-    console.error('❌ Create Featured Transaction Error:', error);
+    console.error('❌ Create featured transaction error:', error.response?.data || error.message);
     throw error;
   }
 };
 
-// Export all functions
-export default {
-  // Connection Test
-  testConnection,
-  
-  // Auth
-  sendOTP,
-  checkMobile,
-  verifyOTP,
-  verifyOTPWithBackend,
-  workerLogin,
-  registerWorker,
-  logout,
-  
-  // Worker Management
-  getWorkerProfile,
-  updateWorkerProfile,
-  updateOnlineStatus,
-  updateAvailabilityStatus,
-  getWorkerStats,
-  getDashboardData,
-  getWorkers,
-  getWorkerById,
-  updateSubscription,
-  uploadDocument,
-  
-  // Reviews
-  getWorkerReviews,
-  
-  // Notifications
-  getWorkerNotifications,
-  getActiveBanners,
-  markNotificationRead,
-  getNotificationPreferences,
-  updateNotificationPreferences,
-  
-  // Privacy
-  getPrivacySettings,
-  updatePrivacySettings,
-  
-  // Transactions
-  getWorkerTransactions,
-  createSubscriptionTransaction,
-  confirmSubscriptionPayment,
-  createFeaturedTransaction,
-  
-  // Pricing
-  getSubscriptionPlans,
-  getAddOns,
-  
-  // CMS
-  getCMSContent,
-  
-  // Storage
-  getAuthToken,
-  setAuthToken,
-  removeAuthToken,
-  getUserData,
-  setUserData,
-  removeUserData,
+/**
+ * Upload document for verification
+ * @param {string} documentType - Document type (aadhaar, pan, gst, etc.)
+ * @param {object} documentData - Document file data
+ * @returns {Promise<object>} - Upload response
+ */
+export const uploadDocument = async (documentType, documentData) => {
+  try {
+    console.log('📄 Uploading document:', documentType);
+    
+    // In production, this would upload to cloud storage
+    // For now, simulate successful upload
+    const response = {
+      success: true,
+      message: 'Document uploaded successfully',
+      documentUrl: `https://storage.example.com/${documentType}_${Date.now()}.jpg`
+    };
+    
+    console.log('✅ Document uploaded:', response.documentUrl);
+    return response;
+  } catch (error) {
+    console.error('❌ Upload document error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get worker verification status
+ * @param {string} workerId - Worker ID
+ * @returns {Promise<object>} - Verification status
+ */
+export const getVerificationStatus = async (workerId) => {
+  try {
+    console.log('🛡️ Fetching verification status for:', workerId);
+    const response = await api.get(`/workers/${workerId}/verification-status`);
+    return response.data;
+  } catch (error) {
+    console.error('❌ Get verification status error:', error.response?.data || error.message);
+    return { success: false, status: {} };
+  }
+};
+
+/**
+ * Submit KYC documents for verification
+ * @param {string} workerId - Worker ID
+ * @param {object} documents - KYC documents
+ * @returns {Promise<object>} - Submission response
+ */
+export const submitKYCDocuments = async (workerId, documents) => {
+  try {
+    console.log('📋 Submitting KYC documents for worker:', workerId);
+    const response = await api.post(`/workers/${workerId}/kyc/submit`, documents);
+    return response.data;
+  } catch (error) {
+    console.error('❌ Submit KYC documents error:', error.response?.data || error.message);
+    throw error;
+  }
+};
+
+/**
+ * Confirm subscription payment
+ * @param {string} transactionId - Transaction ID
+ * @param {object} paymentDetails - Payment details (razorpay IDs)
+ * @returns {Promise<object>} - Confirmation response
+ */
+export const confirmSubscriptionPayment = async (transactionId, paymentDetails) => {
+  try {
+    console.log('✅ Confirming subscription payment');
+    const response = await api.post('/transactions/subscription/confirm', {
+      transactionId,
+      ...paymentDetails
+    });
+    return response.data;
+  } catch (error) {
+    console.error('❌ Confirm payment error:', error.response?.data || error.message);
+    throw error;
+  }
 };

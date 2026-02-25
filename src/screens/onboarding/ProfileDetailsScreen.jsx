@@ -20,9 +20,12 @@ import PhoneInput from '../../components/PhoneInput';
 import * as api from '../../services/api';
 import { useLanguage } from '../../context/LanguageContext';
 import { getFCMToken } from '../../services/fcm.service';
+import { getCurrentLocationWithAddress, showLocationError } from '../../services/location.service';
 
 const ProfileDetailsScreen = ({ workerType, onComplete, onBack }) => {
   const [loading, setLoading] = useState(false);
+  const [fetchingLocation, setFetchingLocation] = useState(false);
+  const [passwordError, setPasswordError] = useState('');
   
   // ✅ Use global language context instead of prop
   const { selectedLanguage } = useLanguage();
@@ -41,6 +44,8 @@ const ProfileDetailsScreen = ({ workerType, onComplete, onBack }) => {
     msmeNumber: '',
     availability: 'online',
     selectedLanguages: [],
+    selectedCategories: [], // ✅ Store selected category IDs
+    selectedCities: [], // ✅ Store selected cities
     documents: {
       profilePhoto: null,
       aadharCard: null,
@@ -55,6 +60,35 @@ const ProfileDetailsScreen = ({ workerType, onComplete, onBack }) => {
 
   const [showLanguageMenu, setShowLanguageMenu] = useState(false);
   const [showQRCode, setShowQRCode] = useState(false);
+  const [categories, setCategories] = useState([]); // ✅ Store categories from backend
+  const [loadingCategories, setLoadingCategories] = useState(true);
+  const [showCategoryMenu, setShowCategoryMenu] = useState(false); // ✅ Toggle category dropdown
+  const [showCityMenu, setShowCityMenu] = useState(false); // ✅ Toggle city dropdown
+  const [citySearchQuery, setCitySearchQuery] = useState(''); // ✅ City search
+
+  // ✅ Indian Cities List (Static - from images)
+  const indianCities = [
+    'Bangalore',
+    'Mysuru',
+    'Mumbai',
+    'Delhi',
+    'Hyderabad',
+    'Chennai',
+    'Pimpri-Chinchwad',
+    'Patna',
+    'Vadodara',
+    'Kanpur',
+    'Nagpur',
+    'Indore',
+    'Thane',
+    'Bhopal',
+    'Visakhapatnam',
+    'Pune',
+    'Kolkata',
+    'Ahmedabad',
+    'Jaipur',
+    'Lucknow'
+  ];
 
   const availableLanguages = [
     { code: 'en', name: 'English', nativeName: 'English', flag: '🇬🇧' },
@@ -65,7 +99,88 @@ const ProfileDetailsScreen = ({ workerType, onComplete, onBack }) => {
     { code: 'mr', name: 'Marathi', nativeName: 'मराठी', flag: '🇮🇳' },
     { code: 'gu', name: 'Gujarati', nativeName: 'ગુજરાતી', flag: '🇮🇳' },
     { code: 'bn', name: 'Bengali', nativeName: 'বাংলা', flag: '🇮🇳' },
+    { code: 'ml', name: 'Malayalam', nativeName: 'മലയാളം', flag: '🇮🇳' },
+    { code: 'or', name: 'Odia', nativeName: 'ଓଡ଼ିଆ', flag: '🇮🇳' },
+    { code: 'pa', name: 'Punjabi', nativeName: 'ਪੰਜਾਬੀ', flag: '🇮🇳' },
+    { code: 'as', name: 'Assamese', nativeName: 'অসমীয়া', flag: '🇮🇳' },
   ];
+
+  // ✅ Fetch categories from backend on component mount
+  React.useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        setLoadingCategories(true);
+        console.log('📂 Fetching categories from backend...');
+        const response = await api.getCategories(true); // Get only active categories
+        
+        if (response.success && response.data) {
+          // ✅ Map frontend workerType to backend format for filtering
+          const workerTypeMapping = {
+            'individual': 'Worker',
+            'crew_team': 'Crew / Team',
+            'contractor': 'Contractor',
+            'service_provider': 'Service Provider'
+          };
+          
+          const backendWorkerType = workerTypeMapping[workerType] || 'Worker';
+          
+          // ✅ Filter categories based on worker type
+          const filteredCategories = response.data.filter(category => 
+            category.workerTypes && category.workerTypes.includes(backendWorkerType)
+          );
+          
+          console.log(`✅ Loaded ${filteredCategories.length} categories for ${backendWorkerType}`);
+          setCategories(filteredCategories);
+        }
+      } catch (error) {
+        console.error('❌ Failed to fetch categories:', error);
+        // Set empty array on error so UI doesn't break
+        setCategories([]);
+      } finally {
+        setLoadingCategories(false);
+      }
+    };
+
+    fetchCategories();
+  }, [workerType]);
+
+  // ✅ Toggle category selection
+  const toggleCategory = (categoryId) => {
+    setFormData(prev => {
+      const isSelected = prev.selectedCategories.includes(categoryId);
+      return {
+        ...prev,
+        selectedCategories: isSelected
+          ? prev.selectedCategories.filter(id => id !== categoryId)
+          : [...prev.selectedCategories, categoryId]
+      };
+    });
+    // ✅ Auto-close menu after selection
+    setShowCategoryMenu(false);
+  };
+
+  // ✅ Toggle city selection
+  const toggleCity = (cityName) => {
+    setFormData(prev => {
+      const isSelected = prev.selectedCities.includes(cityName);
+      const newSelectedCities = isSelected
+        ? prev.selectedCities.filter(city => city !== cityName)
+        : [...prev.selectedCities, cityName];
+      
+      return {
+        ...prev,
+        selectedCities: newSelectedCities,
+        serviceAreas: newSelectedCities.join(', ') // Update serviceAreas text
+      };
+    });
+    // ✅ Auto-close menu after selection
+    setShowCityMenu(false);
+  };
+
+  // ✅ Filter cities based on search
+  const filteredCities = indianCities.filter(city =>
+    city.toLowerCase().includes(citySearchQuery.toLowerCase())
+  );
 
   // Translations
   const translations = {
@@ -112,8 +227,10 @@ const ProfileDetailsScreen = ({ workerType, onComplete, onBack }) => {
       createPassword: 'Create a password (min 6 characters)',
       services: 'Services',
       enterServices: 'e.g., Plumbing, Electrical, Carpentry',
-      location: 'Location/Service Areas',
+      location: 'Service Area / City',
       enterLocation: 'e.g., Andheri, Bandra, Mumbai',
+      useCurrentLocation: 'Use Current Location',
+      detectingLocation: 'Detecting location...',
       gstNumber: 'GST Number (Optional)',
       enterGST: 'Enter GST number',
       msmeNumber: 'MSME Number (Optional)',
@@ -546,14 +663,72 @@ const ProfileDetailsScreen = ({ workerType, onComplete, onBack }) => {
   const t = translations[selectedLanguage] || translations.English;
 
   const workerTypeInfo = {
-    individual: { icon: '👤', title: 'Individual Worker' },
-    crew_leader: { icon: '👥', title: 'Crew Leader' },
-    contractor: { icon: '🏗️', title: 'Contractor' },
-    service_provider: { icon: '🧰', title: 'Service Provider' },
+    individual: { iconName: 'person', title: 'Individual Worker' },
+    crew_Team: { iconName: 'people', title: 'Crew Team' },
+    contractor: { iconName: 'construct', title: 'Contractor' },
+    service_provider: { iconName: 'briefcase', title: 'Service Provider' },
   };
 
   const updateField = (field, value) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  // ✅ Handle transaction number - only numbers
+  const handleTransactionNumberChange = (value) => {
+    const numericValue = value.replace(/[^0-9]/g, '');
+    setFormData(prev => ({
+      ...prev,
+      payment: { ...prev.payment, transactionNumber: numericValue }
+    }));
+  };
+
+  // ✅ Get Current GPS Location
+  const handleGetCurrentLocation = async () => {
+    try {
+      setFetchingLocation(true);
+      console.log('📍 Fetching current location...');
+      
+      const result = await getCurrentLocationWithAddress();
+      
+      if (result.success) {
+        const locationText = result.formattedAddress || `${result.city}, ${result.state}`;
+        
+        setFormData(prev => ({
+          ...prev,
+          serviceAreas: locationText,
+          selectedCities: [result.city],
+        }));
+        
+        // Show different message for fallback (coordinates only)
+        if (result.fallback) {
+          Alert.alert(
+            '⚠️ Location Detected',
+            `GPS coordinates: ${locationText}\n\nAddress lookup failed. You can edit this manually or try again.`,
+            [{ text: 'OK' }]
+          );
+        } else {
+          Alert.alert(
+            '✅ Location Detected',
+            `Your current location: ${locationText}`,
+            [{ text: 'OK' }]
+          );
+        }
+        
+        console.log('✅ Location set:', locationText);
+      } else {
+        console.error('❌ Location fetch failed:', result.error);
+        showLocationError(result.error);
+      }
+    } catch (error) {
+      console.error('❌ Get location error:', error);
+      Alert.alert(
+        'Location Error',
+        'Unable to get your location. Please check:\n\n• GPS is enabled\n• Internet connection is active\n• Location permission is granted\n\nOr enter your location manually.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setFetchingLocation(false);
+    }
   };
 
   const toggleLanguage = (languageName) => {
@@ -566,6 +741,8 @@ const ProfileDetailsScreen = ({ workerType, onComplete, onBack }) => {
           : [...prev.selectedLanguages, languageName]
       };
     });
+    // ✅ Auto-close menu after selection
+    setShowLanguageMenu(false);
   };
 
   const handleDocumentUpload = (docType) => {
@@ -723,13 +900,19 @@ const ProfileDetailsScreen = ({ workerType, onComplete, onBack }) => {
       return;
     }
 
-    if (!formData.services.trim()) {
-      Alert.alert('Required', 'Please enter your services');
+    if (!formData.selectedCategories || formData.selectedCategories.length === 0) {
+      Alert.alert('Required', 'Please select at least one service category');
       return;
     }
 
-    if (!formData.serviceAreas.trim()) {
-      Alert.alert('Required', 'Please enter service areas');
+    if (!formData.serviceAreas || formData.serviceAreas.trim() === '') {
+      Alert.alert('Required', 'Please enter your location/service area or use GPS');
+      return;
+    }
+    
+    // ✅ Validate password
+    if (!formData.password || formData.password.length !== 6) {
+      Alert.alert('Required', 'Please enter a 6-digit password');
       return;
     }
     
@@ -759,10 +942,15 @@ const ProfileDetailsScreen = ({ workerType, onComplete, onBack }) => {
         // Continue registration even if FCM fails
       }
       
-      // Prepare category - convert services string to array
+      // Prepare category - use selected categories from backend
       let categoryArray = [];
-      if (formData.services && formData.services.trim()) {
-        // Split by comma and clean up
+      if (formData.selectedCategories && formData.selectedCategories.length > 0) {
+        // ✅ Get category names from selected IDs
+        categoryArray = categories
+          .filter(cat => formData.selectedCategories.includes(cat._id))
+          .map(cat => cat.name);
+      } else if (formData.services && formData.services.trim()) {
+        // Fallback: Split by comma if manual entry
         categoryArray = formData.services
           .split(',')
           .map(s => s.trim())
@@ -782,7 +970,7 @@ const ProfileDetailsScreen = ({ workerType, onComplete, onBack }) => {
       // ✅ Map frontend workerType to backend format
       const workerTypeMapping = {
         'individual': 'Worker',
-        'crew_leader': 'Crew / Team',
+        'crew_Team': 'Crew / Team',
         'contractor': 'Contractor',
         'service_provider': 'Service Provider'
       };
@@ -806,8 +994,8 @@ const ProfileDetailsScreen = ({ workerType, onComplete, onBack }) => {
         msmeNumber: formData.msmeNumber?.trim() || '',
         onboardingFee: formData.payment.transactionNumber.trim(),
         businessName: formData.businessName?.trim() || '',
-        availability: formData.availability || 'online', // Add availability status
-        online: formData.availability === 'online', // Set online status based on availability
+        availability: formData.availability || 'online', // Send exact availability status: 'online', 'busy', or 'offline'
+        online: formData.availability === 'online', // Set online to true only for 'online', false for 'busy' and 'offline'
         fcmToken: fcmToken, // ✅ Add FCM token for push notifications
         // Add documents with base64 data
         profilePhoto: formData.documents.profilePhoto?.base64 || formData.documents.profilePhoto?.uri || null,
@@ -817,7 +1005,18 @@ const ProfileDetailsScreen = ({ workerType, onComplete, onBack }) => {
         paymentScreenshot: formData.payment.transactionScreenshot?.base64 || formData.payment.transactionScreenshot?.uri || null,
       };
 
-      console.log('📦 Worker Data:', JSON.stringify(workerData, null, 2));
+      console.log('📦 Worker Data to be sent:');
+      console.log('   Name:', workerData.name);
+      console.log('   Mobile:', workerData.mobile);
+      console.log('   Email:', workerData.email);
+      console.log('   Worker Type:', workerData.workerType);
+      console.log('   Category:', workerData.category);
+      console.log('   Service Area:', workerData.serviceArea);
+      console.log('   City:', workerData.city);
+      console.log('   FCM Token:', workerData.fcmToken ? 'Present' : 'Not available');
+      console.log('   Availability:', workerData.availability);
+      console.log('   Online:', workerData.online);
+      console.log('\n📡 Sending to backend...');
 
       const response = await api.registerWorker(workerData);
       
@@ -831,7 +1030,7 @@ const ProfileDetailsScreen = ({ workerType, onComplete, onBack }) => {
           name: response.worker?.name || formData.name,
           email: response.worker?.email || formData.email,
           mobile: response.worker?.mobile || formData.mobile,
-          workerType: workerType, // ✅ Keep frontend format (individual, crew_leader, etc.)
+          workerType: workerType, // ✅ Keep frontend format (individual, crew_Team, etc.)
           workerTypeBackend: response.worker?.workerType || backendWorkerType, // Backend format for reference
           category: response.worker?.category || categoryArray,
           serviceArea: response.worker?.serviceArea || formData.serviceAreas,
@@ -1004,9 +1203,13 @@ const ProfileDetailsScreen = ({ workerType, onComplete, onBack }) => {
       >
         {/* Worker Type Display */}
         <View style={styles.typeDisplayCard}>
-          <Text style={styles.typeDisplayIcon}>
-            {workerTypeInfo[workerType]?.icon}
-          </Text>
+          <View style={styles.typeDisplayIconContainer}>
+            <Icon 
+              name={workerTypeInfo[workerType]?.iconName} 
+              size={32} 
+              color={COLORS.primary} 
+            />
+          </View>
           <View style={styles.typeDisplayInfo}>
             <Text style={styles.typeDisplayLabel}>{t.selectedType}</Text>
             <Text style={styles.typeDisplayTitle}>
@@ -1018,9 +1221,15 @@ const ProfileDetailsScreen = ({ workerType, onComplete, onBack }) => {
         {/* Individual Worker Form */}
         {workerType === 'individual' && (
           <>
-            {/* Basic Details Card */}
+            {/* 1️⃣ Basic Details Card - Simplified */}
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>📋 {t.basicDetails}</Text>
+              <View style={styles.cardHeader}>
+                <View style={styles.stepBadge}>
+                  <Icon name="person-outline" size={18} color={COLORS.white} />
+                </View>
+                <Text style={styles.cardTitle}>Basic Details</Text>
+              </View>
+              <Text style={styles.cardSubtitle}>Enter your basic information</Text>
 
               {/* Name */}
               <View style={styles.inputGroup}>
@@ -1053,14 +1262,30 @@ const ProfileDetailsScreen = ({ workerType, onComplete, onBack }) => {
               </View>
 
               {/* Mobile Number */}
-              <PhoneInput
-                label={t.mobileNumber}
-                value={formData.mobile}
-                onChangeText={(value) => updateField('mobile', value)}
-                placeholder={t.enterMobile}
-                required={true}
-                requiredText={t.required}
-              />
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>
+                  {t.mobileNumber} <Text style={styles.required}>{t.required}</Text>
+                </Text>
+                <View style={styles.phoneInputContainer}>
+                  <View style={styles.countryCode}>
+                    <Text style={styles.countryCodeText}>+91</Text>
+                  </View>
+                  <TextInput
+                    style={styles.phoneInput}
+                    placeholder="Enter 10-digit mobile number"
+                    value={formData.mobile}
+                    onChangeText={(value) => {
+                      const numericValue = value.replace(/[^0-9]/g, '');
+                      if (numericValue.length <= 10) {
+                        updateField('mobile', numericValue);
+                      }
+                    }}
+                    keyboardType="numeric"
+                    maxLength={10}
+                    placeholderTextColor="#94a3b8"
+                  />
+                </View>
+              </View>
 
               {/* Password */}
               <View style={styles.inputGroup}>
@@ -1068,114 +1293,224 @@ const ProfileDetailsScreen = ({ workerType, onComplete, onBack }) => {
                   {t.password} <Text style={styles.required}>{t.required}</Text>
                 </Text>
                 <TextInput
-                  style={styles.input}
-                  placeholder={t.createPassword}
+                  style={[styles.input, passwordError && styles.inputError]}
+                  placeholder="Enter 6-digit password"
                   value={formData.password}
-                  onChangeText={(value) => updateField('password', value)}
+                  onChangeText={(value) => {
+                    const numericValue = value.replace(/[^0-9]/g, '');
+                    if (numericValue.length <= 6) {
+                      updateField('password', numericValue);
+                      if (numericValue.length === 6) {
+                        setPasswordError('');
+                      } else if (numericValue.length > 0) {
+                        setPasswordError('Password must be exactly 6 digits');
+                      } else {
+                        setPasswordError('');
+                      }
+                    }
+                  }}
+                  keyboardType="numeric"
+                  maxLength={6}
                   secureTextEntry
                   placeholderTextColor="#94a3b8"
                 />
+                {passwordError ? (
+                  <Text style={styles.errorText}>{passwordError}</Text>
+                ) : null}
               </View>
 
-              {/* Services */}
+              {/* Languages */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>{t.languages}</Text>
+                <TouchableOpacity
+                  style={styles.languageToggleButton}
+                  onPress={() => setShowLanguageMenu(!showLanguageMenu)}
+                  activeOpacity={0.7}
+                >
+                 
+                  <Text style={styles.languageToggleText}>
+                    {formData.selectedLanguages.length > 0
+                      ? `${formData.selectedLanguages.length} ${t.languagesSelected}`
+                      : t.selectLanguagesPlaceholder}
+                  </Text>
+                  <Icon 
+                    name={showLanguageMenu ? "chevron-up" : "chevron-down"} 
+                    size={20} 
+                    color={COLORS.textSecondary} 
+                  />
+                </TouchableOpacity>
+
+                {showLanguageMenu && (
+                  <View style={styles.languageGridContainer}>
+                    {availableLanguages.map((language) => {
+                      const isSelected = formData.selectedLanguages.includes(language.name);
+                      return (
+                        <TouchableOpacity
+                          key={language.code}
+                          style={[
+                            styles.languageCard,
+                            isSelected && styles.languageCardSelected
+                          ]}
+                          onPress={() => toggleLanguage(language.name)}
+                          activeOpacity={0.7}
+                        >
+                          {isSelected && (
+                            <View style={styles.languageCheckmark}>
+                              <Icon name="checkmark-circle" size={20} color={COLORS.secondary} />
+                            </View>
+                          )}
+                          <View style={styles.languageFlagContainer}>
+                            <Text style={styles.languageFlag}>{language.flag}</Text>
+                          </View>
+                          <Text style={styles.languageCardName}>{language.name}</Text>
+                          <Text style={styles.languageCardNative}>{language.nativeName}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                )}
+
+                {formData.selectedLanguages.length > 0 && (
+                  <View style={styles.selectedLanguagesInfo}>
+                    <Icon name="checkmark-circle" size={18} color={COLORS.secondary} />
+                    <Text style={styles.selectedLanguagesInfoText}>
+                      {formData.selectedLanguages.length} {t.languagesSelected}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </View>
+
+            {/* 2️⃣ Service Info Card */}
+            <View style={styles.card}>
+              <View style={styles.cardHeader}>
+                <View style={[styles.stepBadge, { backgroundColor: COLORS.secondary }]}>
+                  <Icon name="briefcase-outline" size={18} color={COLORS.white} />
+                </View>
+                <Text style={styles.cardTitle}>Service Information</Text>
+              </View>
+              <Text style={styles.cardSubtitle}>Tell us about your services and location</Text>
+
+              {/* Services - Dynamic Category Selection */}
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>
                   {t.services} <Text style={styles.required}>{t.required}</Text>
                 </Text>
-                <TextInput
-                  style={[styles.input, styles.textArea]}
-                  placeholder={t.enterServices}
-                  value={formData.services}
-                  onChangeText={(value) => updateField('services', value)}
-                  placeholderTextColor="#94a3b8"
-                  multiline
-                  numberOfLines={3}
-                />
+                
+                {loadingCategories ? (
+                  <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="small" color={COLORS.primary} />
+                    <Text style={styles.loadingText}>Loading services...</Text>
+                  </View>
+                ) : (
+                  <>
+                    <TouchableOpacity
+                      style={styles.categoryToggleButton}
+                      onPress={() => setShowCategoryMenu(!showCategoryMenu)}
+                      activeOpacity={0.7}
+                    >
+                      <Icon name="briefcase" size={20} color={COLORS.primary} />
+                      <Text style={styles.categoryToggleText}>
+                        {formData.selectedCategories.length > 0
+                          ? `${formData.selectedCategories.length} service(s) selected`
+                          : 'Select services'}
+                      </Text>
+                      <Icon 
+                        name={showCategoryMenu ? "chevron-up" : "chevron-down"} 
+                        size={20} 
+                        color={COLORS.textSecondary} 
+                      />
+                    </TouchableOpacity>
+
+                    {showCategoryMenu && (
+                      <View style={styles.categoryGridContainer}>
+                        {categories.length === 0 ? (
+                          <Text style={styles.noCategoriesText}>
+                            No services available for this worker type
+                          </Text>
+                        ) : (
+                          categories.map((category) => {
+                            const isSelected = formData.selectedCategories.includes(category._id);
+                            return (
+                              <TouchableOpacity
+                                key={category._id}
+                                style={[
+                                  styles.categoryCard,
+                                  isSelected && styles.categoryCardSelected
+                                ]}
+                                onPress={() => toggleCategory(category._id)}
+                                activeOpacity={0.7}
+                              >
+                                {isSelected && (
+                                  <View style={styles.categoryCheckmark}>
+                                    <Icon name="checkmark-circle" size={20} color={COLORS.secondary} />
+                                  </View>
+                                )}
+                                <Text style={styles.categoryCardName}>{category.name}</Text>
+                                </TouchableOpacity>
+                            );
+                          })
+                        )}
+                      </View>
+                    )}
+
+                    {formData.selectedCategories.length > 0 && (
+                      <View style={styles.selectedCategoriesInfo}>
+                        <Icon name="checkmark-circle" size={18} color={COLORS.secondary} />
+                        <Text style={styles.selectedCategoriesInfoText}>
+                          {formData.selectedCategories.length} service(s) selected
+                        </Text>
+                      </View>
+                    )}
+                  </>
+                )}
               </View>
 
-              {/* Location */}
+              {/* Location - Text Input with Current Location Button */}
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>
-                  {t.location} <Text style={styles.required}>{t.required}</Text>
-                </Text>
+                <View style={styles.labelRow}>
+                  <Text style={styles.label}>
+                    {t.location} <Text style={styles.required}>{t.required}</Text>
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.currentLocationButton}
+                    onPress={handleGetCurrentLocation}
+                    disabled={fetchingLocation}
+                    activeOpacity={0.7}
+                  >
+                    {fetchingLocation ? (
+                      <>
+                        <ActivityIndicator size="small" color={COLORS.white} />
+                        <Text style={styles.currentLocationButtonText}>Detecting...</Text>
+                      </>
+                    ) : (
+                      <>
+                        <Icon name="navigate" size={16} color={COLORS.white} />
+                        <Text style={styles.currentLocationButtonText}>Use Current Location</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+                
                 <TextInput
-                  style={[styles.input, styles.textArea]}
+                  style={styles.input}
                   placeholder={t.enterLocation}
                   value={formData.serviceAreas}
                   onChangeText={(value) => updateField('serviceAreas', value)}
                   placeholderTextColor="#94a3b8"
                   multiline
-                  numberOfLines={2}
                 />
               </View>
             </View>
 
-            {/* Languages Card */}
+            {/* 3️⃣ Documents Card */}
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>🌐 {t.languages}</Text>
-              <Text style={styles.cardSubtitle}>{t.selectLanguages}</Text>
-
-              <TouchableOpacity
-                style={styles.languageToggleButton}
-                onPress={() => setShowLanguageMenu(!showLanguageMenu)}
-                activeOpacity={0.7}
-              >
-                <Icon name="language" size={20} color={COLORS.primary} />
-                <Text style={styles.languageToggleText}>
-                  {formData.selectedLanguages.length > 0
-                    ? `${formData.selectedLanguages.length} ${t.languagesSelected}`
-                    : t.selectLanguagesPlaceholder}
-                </Text>
-                <Icon 
-                  name={showLanguageMenu ? "chevron-up" : "chevron-down"} 
-                  size={20} 
-                  color={COLORS.textSecondary} 
-                />
-              </TouchableOpacity>
-
-              {showLanguageMenu && (
-                <View style={styles.languageGridContainer}>
-                  {availableLanguages.map((language) => {
-                    const isSelected = formData.selectedLanguages.includes(language.name);
-                    return (
-                      <TouchableOpacity
-                        key={language.code}
-                        style={[
-                          styles.languageCard,
-                          isSelected && styles.languageCardSelected
-                        ]}
-                        onPress={() => toggleLanguage(language.name)}
-                        activeOpacity={0.7}
-                      >
-                        {isSelected && (
-                          <View style={styles.languageCheckmark}>
-                            <Icon name="checkmark-circle" size={20} color={COLORS.secondary} />
-                          </View>
-                        )}
-                        <View style={styles.languageFlagContainer}>
-                          <Text style={styles.languageFlag}>{language.flag}</Text>
-                        </View>
-                        <Text style={styles.languageCardName}>{language.name}</Text>
-                        <Text style={styles.languageCardNative}>{language.nativeName}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
+              <View style={styles.cardHeader}>
+                <View style={[styles.stepBadge, { backgroundColor: '#8b5cf6' }]}>
+                  <Icon name="document-text-outline" size={18} color={COLORS.white} />
                 </View>
-              )}
-
-              {formData.selectedLanguages.length > 0 && (
-                <View style={styles.selectedLanguagesInfo}>
-                  <Icon name="checkmark-circle" size={18} color={COLORS.secondary} />
-                  <Text style={styles.selectedLanguagesInfoText}>
-                    {formData.selectedLanguages.length} {t.languagesSelected}
-                  </Text>
-                </View>
-              )}
-            </View>
-
-            {/* Documents Card */}
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>📄 {t.documents}</Text>
+                <Text style={styles.cardTitle}>Documents</Text>
+              </View>
               <Text style={styles.cardSubtitle}>{t.uploadDocuments}</Text>
 
               {/* Profile Photo */}
@@ -1236,110 +1571,159 @@ const ProfileDetailsScreen = ({ workerType, onComplete, onBack }) => {
               </View>
             </View>
 
-            {/* Payment Card */}
+            {/* 4️⃣ Payment Card */}
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>💳 {t.registrationPayment}</Text>
-              <Text style={styles.cardSubtitle}>{t.completePayment}</Text>
-
-              {/* Payment Amount Info */}
-              <View style={styles.paymentInfoBox}>
-                <View style={styles.paymentInfoHeader}>
-                  <Icon name="cash" size={28} color={COLORS.secondary} />
-                  <View style={styles.paymentInfoTextContainer}>
-                    <Text style={styles.paymentInfoLabel}>{t.registrationFee}</Text>
-                    <Text style={styles.paymentInfoAmount}>₹499</Text>
-                  </View>
+              <View style={styles.cardHeader}>
+                <View style={[styles.stepBadge, { backgroundColor: '#f59e0b' }]}>
+                  <Icon name="card-outline" size={18} color={COLORS.white} />
                 </View>
-                <Text style={styles.paymentInfoNote}>
-                  {t.oneTimeFee}
-                </Text>
+                <Text style={styles.cardTitle}>Registration Payment</Text>
+              </View>
+              <Text style={styles.cardSubtitle}>Complete payment to activate your profile</Text>
+
+              {/* Registration Fee Display */}
+              <View style={styles.registrationFeeBox}>
+                <Text style={styles.registrationFeeLabel}>Registration Fee</Text>
+                <Text style={styles.registrationFeeAmount}>₹1</Text>
+                <Text style={styles.registrationFeeNote}>One-time registration fee</Text>
               </View>
 
-              {/* QR Code Section - Minimal & Clean */}
-              <View style={styles.qrSection}>
-                <TouchableOpacity
-                  style={styles.qrToggleButton}
-                  onPress={() => setShowQRCode(!showQRCode)}
-                  activeOpacity={0.7}
-                >
-                  <Icon name="qr-code" size={24} color={COLORS.primary} />
-                  <Text style={styles.qrToggleText}>
-                    {showQRCode ? t.hideQR : t.showQR}
-                  </Text>
-                  <Icon 
-                    name={showQRCode ? "chevron-up" : "chevron-down"} 
-                    size={20} 
-                    color={COLORS.textSecondary} 
-                  />
-                </TouchableOpacity>
+              {/* QR Code Toggle Button */}
+              <TouchableOpacity
+                style={styles.qrToggleButton}
+                onPress={() => setShowQRCode(!showQRCode)}
+                activeOpacity={0.7}
+              >
+                <Icon name="qr-code" size={24} color={COLORS.primary} />
+                <Text style={styles.qrToggleText}>
+                  {showQRCode ? 'Hide QR Code' : 'Show QR Code for Payment'}
+                </Text>
+                <Icon 
+                  name={showQRCode ? "chevron-up" : "chevron-down"} 
+                  size={20} 
+                  color={COLORS.textSecondary} 
+                />
+              </TouchableOpacity>
 
-                {showQRCode && (
-                  <View style={styles.qrCodeContainer}>
-                    {/* ✅ Only QR Code - Clean & Simple */}
-                    <View style={styles.qrCodeBox}>
-                      <Image 
-                        source={{ 
-                          uri: `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent('upi://pay?pa=paasowork@paytm&pn=PaasoWork&am=499&cu=INR&tn=Registration Fee')}`
-                        }} 
-                        style={styles.qrCodeImage} 
-                        resizeMode="contain" 
-                      />
+              {/* QR Code Section - Only show when toggled */}
+              {showQRCode && (
+                <View style={styles.qrPaymentSection}>
+                  <View style={styles.qrPaymentHeader}>
+                    <Icon name="qr-code-outline" size={24} color={COLORS.primary} />
+                    <Text style={styles.qrPaymentTitle}>Scan QR Code to Pay</Text>
+                  </View>
+
+                  {/* QR Code Display */}
+                  <View style={styles.qrCodeDisplayBox}>
+                    <Image 
+                      source={{ 
+                        uri: `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent('upi://pay?pa=psipl1@kbl&pn=Parnets Software India Pvt Ltd&am=1&cu=INR&tn=Registration Fee')}`
+                      }} 
+                      style={styles.qrCodeDisplayImage} 
+                      resizeMode="contain" 
+                    />
+                  </View>
+
+                  {/* Company Details Box */}
+                  <View style={styles.companyDetailsBox}>
+                    <Text style={styles.companyName}>Parnets Software India Pvt Ltd</Text>
+                    <View style={styles.upiDetailRow}>
+                      <Text style={styles.upiDetailLabel}>UPI ID:</Text>
+                      <Text style={styles.upiDetailValue}>psipl1@kbl</Text>
+                    </View>
+                    <View style={styles.upiDetailRow}>
+                      <Text style={styles.upiDetailLabel}>Amount:</Text>
+                      <Text style={styles.upiDetailValue}>₹1</Text>
                     </View>
                   </View>
-                )}
-              </View>
 
-              {/* Transaction Number */}
+                  {/* Payment Note */}
+                  <View style={styles.paymentNoteBox}>
+                    <Icon name="information-circle" size={20} color="#f59e0b" />
+                    <Text style={styles.paymentNoteText}>
+                      After payment, enter your transaction number below
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {/* Spacing after toggle button - always visible for consistent layout */}
+              <View style={{ height: 24 }} />
+
+              {/* Transaction Number Input */}
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>
-                  {t.transactionNumber} <Text style={styles.required}>{t.required}</Text>
+                  Transaction Number / UTR <Text style={styles.optionalText}>(Optional)</Text>
                 </Text>
                 <TextInput
                   style={styles.input}
-                  placeholder={t.enterTransaction}
+                  placeholder="ENTER TRANSACTION ID IF AVAILABLE (E.G., 123456789012)"
                   value={formData.payment.transactionNumber}
-                  onChangeText={(value) => 
-                    setFormData(prev => ({
-                      ...prev,
-                      payment: { ...prev.payment, transactionNumber: value }
-                    }))
-                  }
+                  onChangeText={handleTransactionNumberChange}
+                  keyboardType="default"
+                  maxLength={50}
                   placeholderTextColor="#94a3b8"
                 />
-                <Text style={styles.hint}>{t.transactionHint}</Text>
+                <View style={styles.transactionHints}>
+                
+                  <Text style={styles.transactionHint}>• If provided, must be at least 12 characters (letters and numbers only)</Text>
+                  <Text style={[styles.transactionHint, { color: '#3b82f6' }]}>
+                    • You can submit without transaction number - admin will verify from screenshot
+                  </Text>
+                </View>
               </View>
 
-              {/* Transaction Screenshot */}
-              <View style={styles.documentItem}>
-                <View style={styles.documentInfo}>
-                  <Icon name="image" size={32} color={COLORS.secondary} />
-                  <View style={styles.documentTextContainer}>
-                    <Text style={styles.documentTitle}>{t.paymentScreenshot}</Text>
-                    <Text style={styles.documentSubtitle}>{t.uploadProof}</Text>
-                  </View>
-                </View>
+              {/* Payment Screenshot Upload */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>
+                  Payment Screenshot <Text style={styles.required}>*</Text>
+                </Text>
+                
                 <TouchableOpacity
-                  style={[styles.uploadButton, { backgroundColor: COLORS.secondary }]}
+                  style={styles.screenshotUploadBox}
                   onPress={handleTransactionScreenshot}
                   activeOpacity={0.7}
                 >
-                  <Icon name="cloud-upload" size={20} color={COLORS.white} />
-                  <Text style={styles.uploadButtonText}>{t.upload}</Text>
+                  {formData.payment.transactionScreenshot ? (
+                    <View style={styles.screenshotPreview}>
+                      <Image 
+                        source={{ uri: formData.payment.transactionScreenshot.uri }} 
+                        style={styles.screenshotPreviewImage}
+                        resizeMode="cover"
+                      />
+                      <View style={styles.screenshotOverlay}>
+                        <Icon name="checkmark-circle" size={40} color="#10b981" />
+                        <Text style={styles.screenshotUploadedText}>Screenshot Uploaded</Text>
+                        <Text style={styles.screenshotChangeText}>Tap to change</Text>
+                      </View>
+                    </View>
+                  ) : (
+                    <View style={styles.screenshotUploadPlaceholder}>
+                      <Icon name="cloud-upload-outline" size={48} color="#94a3b8" />
+                      <Text style={styles.screenshotUploadTitle}>Upload Payment Screenshot</Text>
+                      <Text style={styles.screenshotUploadSubtitle}>
+                        Click to select image from your device
+                      </Text>
+                    </View>
+                  )}
                 </TouchableOpacity>
               </View>
-
-             
-              
             </View>
           </>
         )}
 
-        {/* Other Worker Types Form */}
+        {/* Other Worker Types Form - Simplified to match Individual Worker */}
         {workerType !== 'individual' && (
           <>
-            {/* Basic Details Card */}
+            {/* 1️⃣ Basic Details Card - Simplified */}
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>📋 {t.basicDetails}</Text>
+              <View style={styles.cardHeader}>
+                <View style={styles.stepBadge}>
+                  <Icon name="person-outline" size={18} color={COLORS.white} />
+                </View>
+                <Text style={styles.cardTitle}>Basic Details</Text>
+              </View>
+              <Text style={styles.cardSubtitle}>Enter your basic information</Text>
 
               {/* Name */}
               <View style={styles.inputGroup}>
@@ -1372,14 +1756,30 @@ const ProfileDetailsScreen = ({ workerType, onComplete, onBack }) => {
               </View>
 
               {/* Mobile Number */}
-              <PhoneInput
-                label={t.mobileNumber}
-                value={formData.mobile}
-                onChangeText={(value) => updateField('mobile', value)}
-                placeholder={t.enterMobile}
-                required={true}
-                requiredText={t.required}
-              />
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>
+                  {t.mobileNumber} <Text style={styles.required}>{t.required}</Text>
+                </Text>
+                <View style={styles.phoneInputContainer}>
+                  <View style={styles.countryCode}>
+                    <Text style={styles.countryCodeText}>+91</Text>
+                  </View>
+                  <TextInput
+                    style={styles.phoneInput}
+                    placeholder="Enter 10-digit mobile number"
+                    value={formData.mobile}
+                    onChangeText={(value) => {
+                      const numericValue = value.replace(/[^0-9]/g, '');
+                      if (numericValue.length <= 10) {
+                        updateField('mobile', numericValue);
+                      }
+                    }}
+                    keyboardType="numeric"
+                    maxLength={10}
+                    placeholderTextColor="#94a3b8"
+                  />
+                </View>
+              </View>
 
               {/* Password */}
               <View style={styles.inputGroup}>
@@ -1387,143 +1787,276 @@ const ProfileDetailsScreen = ({ workerType, onComplete, onBack }) => {
                   {t.password} <Text style={styles.required}>{t.required}</Text>
                 </Text>
                 <TextInput
-                  style={styles.input}
-                  placeholder={t.createPassword}
+                  style={[styles.input, passwordError && styles.inputError]}
+                  placeholder="Enter 6-digit password"
                   value={formData.password}
-                  onChangeText={(value) => updateField('password', value)}
+                  onChangeText={(value) => {
+                    const numericValue = value.replace(/[^0-9]/g, '');
+                    if (numericValue.length <= 6) {
+                      updateField('password', numericValue);
+                      if (numericValue.length === 6) {
+                        setPasswordError('');
+                      } else if (numericValue.length > 0) {
+                        setPasswordError('Password must be exactly 6 digits');
+                      } else {
+                        setPasswordError('');
+                      }
+                    }
+                  }}
+                  keyboardType="numeric"
+                  maxLength={6}
                   secureTextEntry
                   placeholderTextColor="#94a3b8"
                 />
+                {passwordError ? (
+                  <Text style={styles.errorText}>{passwordError}</Text>
+                ) : null}
               </View>
 
-              {/* Services */}
+              {/* Languages */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>{t.languages}</Text>
+                <TouchableOpacity
+                  style={styles.languageToggleButton}
+                  onPress={() => setShowLanguageMenu(!showLanguageMenu)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.languageToggleText}>
+                    {formData.selectedLanguages.length > 0
+                      ? `${formData.selectedLanguages.length} ${t.languagesSelected}`
+                      : t.selectLanguagesPlaceholder}
+                  </Text>
+                  <Icon 
+                    name={showLanguageMenu ? "chevron-up" : "chevron-down"} 
+                    size={20} 
+                    color={COLORS.textSecondary} 
+                  />
+                </TouchableOpacity>
+
+                {showLanguageMenu && (
+                  <View style={styles.languageGridContainer}>
+                    {availableLanguages.map((language) => {
+                      const isSelected = formData.selectedLanguages.includes(language.name);
+                      return (
+                        <TouchableOpacity
+                          key={language.code}
+                          style={[
+                            styles.languageCard,
+                            isSelected && styles.languageCardSelected
+                          ]}
+                          onPress={() => toggleLanguage(language.name)}
+                          activeOpacity={0.7}
+                        >
+                          {isSelected && (
+                            <View style={styles.languageCheckmark}>
+                              <Icon name="checkmark-circle" size={20} color={COLORS.secondary} />
+                            </View>
+                          )}
+                          <View style={styles.languageFlagContainer}>
+                            <Text style={styles.languageFlag}>{language.flag}</Text>
+                          </View>
+                          <Text style={styles.languageCardName}>{language.name}</Text>
+                          <Text style={styles.languageCardNative}>{language.nativeName}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                )}
+
+                {formData.selectedLanguages.length > 0 && (
+                  <View style={styles.selectedLanguagesInfo}>
+                    <Icon name="checkmark-circle" size={18} color={COLORS.secondary} />
+                    <Text style={styles.selectedLanguagesInfoText}>
+                      {formData.selectedLanguages.length} {t.languagesSelected}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </View>
+
+            {/* 2️⃣ Service Info Card */}
+            <View style={styles.card}>
+              <View style={styles.cardHeader}>
+                <View style={[styles.stepBadge, { backgroundColor: COLORS.secondary }]}>
+                  <Icon name="briefcase-outline" size={18} color={COLORS.white} />
+                </View>
+                <Text style={styles.cardTitle}>Service Information</Text>
+              </View>
+              <Text style={styles.cardSubtitle}>Tell us about your services and location</Text>
+
+              {/* Services - Dynamic Category Selection */}
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>
                   {t.services} <Text style={styles.required}>{t.required}</Text>
                 </Text>
-                <TextInput
-                  style={[styles.input, styles.textArea]}
-                  placeholder={t.enterServices}
-                  value={formData.services}
-                  onChangeText={(value) => updateField('services', value)}
-                  placeholderTextColor="#94a3b8"
-                  multiline
-                  numberOfLines={3}
-                />
+                
+                {loadingCategories ? (
+                  <View style={styles.loadingContainer}>
+                    <ActivityIndicator size="small" color={COLORS.primary} />
+                    <Text style={styles.loadingText}>Loading services...</Text>
+                  </View>
+                ) : (
+                  <>
+                    <TouchableOpacity
+                      style={styles.categoryToggleButton}
+                      onPress={() => setShowCategoryMenu(!showCategoryMenu)}
+                      activeOpacity={0.7}
+                    >
+                      <Icon name="briefcase" size={20} color={COLORS.primary} />
+                      <Text style={styles.categoryToggleText}>
+                        {formData.selectedCategories.length > 0
+                          ? `${formData.selectedCategories.length} service(s) selected`
+                          : 'Select services'}
+                      </Text>
+                      <Icon 
+                        name={showCategoryMenu ? "chevron-up" : "chevron-down"} 
+                        size={20} 
+                        color={COLORS.textSecondary} 
+                      />
+                    </TouchableOpacity>
+
+                    {showCategoryMenu && (
+                      <View style={styles.categoryGridContainer}>
+                        {categories.length === 0 ? (
+                          <Text style={styles.noCategoriesText}>
+                            No services available for this worker type
+                          </Text>
+                        ) : (
+                          categories.map((category) => {
+                            const isSelected = formData.selectedCategories.includes(category._id);
+                            return (
+                              <TouchableOpacity
+                                key={category._id}
+                                style={[
+                                  styles.categoryCard,
+                                  isSelected && styles.categoryCardSelected
+                                ]}
+                                onPress={() => toggleCategory(category._id)}
+                                activeOpacity={0.7}
+                              >
+                                {isSelected && (
+                                  <View style={styles.categoryCheckmark}>
+                                    <Icon name="checkmark-circle" size={20} color={COLORS.secondary} />
+                                  </View>
+                                )}
+                                <Text style={styles.categoryCardName}>{category.name}</Text>
+                                </TouchableOpacity>
+                            );
+                          })
+                        )}
+                      </View>
+                    )}
+
+                    {formData.selectedCategories.length > 0 && (
+                      <View style={styles.selectedCategoriesInfo}>
+                        <Icon name="checkmark-circle" size={18} color={COLORS.secondary} />
+                        <Text style={styles.selectedCategoriesInfoText}>
+                          {formData.selectedCategories.length} service(s) selected
+                        </Text>
+                      </View>
+                    )}
+                  </>
+                )}
               </View>
 
-              {/* Location */}
+              {/* Location - Text Input with Current Location Button */}
               <View style={styles.inputGroup}>
-                <Text style={styles.label}>
-                  {t.location} <Text style={styles.required}>{t.required}</Text>
-                </Text>
+                <View style={styles.labelRow}>
+                  <Text style={styles.label}>
+                    {t.location} <Text style={styles.required}>{t.required}</Text>
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.currentLocationButton}
+                    onPress={handleGetCurrentLocation}
+                    disabled={fetchingLocation}
+                    activeOpacity={0.7}
+                  >
+                    {fetchingLocation ? (
+                      <>
+                        <ActivityIndicator size="small" color={COLORS.white} />
+                        <Text style={styles.currentLocationButtonText}>Detecting...</Text>
+                      </>
+                    ) : (
+                      <>
+                        <Icon name="navigate" size={16} color={COLORS.white} />
+                        <Text style={styles.currentLocationButtonText}>Use Current Location</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+                
                 <TextInput
-                  style={[styles.input, styles.textArea]}
+                  style={styles.input}
                   placeholder={t.enterLocation}
                   value={formData.serviceAreas}
                   onChangeText={(value) => updateField('serviceAreas', value)}
                   placeholderTextColor="#94a3b8"
                   multiline
-                  numberOfLines={2}
                 />
               </View>
 
-              {/* GST Number (for crew_leader and contractor) */}
-              {(workerType === 'crew_leader' || workerType === 'contractor') && (
+              {/* Number of Team Members - Only for crew_Team */}
+              {workerType === 'crew_Team' && (
                 <View style={styles.inputGroup}>
-                  <Text style={styles.label}>{t.gstNumber}</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder={t.enterGST}
-                    value={formData.gstNumber}
-                    onChangeText={(value) => updateField('gstNumber', value)}
-                    placeholderTextColor="#94a3b8"
-                  />
-                </View>
-              )}
-
-              {/* MSME Number (for crew_leader and contractor) */}
-              {(workerType === 'crew_leader' || workerType === 'contractor') && (
-                <View style={styles.inputGroup}>
-                  <Text style={styles.label}>{t.msmeNumber}</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder={t.enterMSME}
-                    value={formData.msmeNumber}
-                    onChangeText={(value) => updateField('msmeNumber', value)}
-                    placeholderTextColor="#94a3b8"
-                  />
-                </View>
-              )}
-            </View>
-
-            {/* Languages Card */}
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>🌐 {t.languages}</Text>
-              <Text style={styles.cardSubtitle}>{t.selectLanguages}</Text>
-
-              <TouchableOpacity
-                style={styles.languageToggleButton}
-                onPress={() => setShowLanguageMenu(!showLanguageMenu)}
-                activeOpacity={0.7}
-              >
-                <Icon name="language" size={20} color={COLORS.primary} />
-                <Text style={styles.languageToggleText}>
-                  {formData.selectedLanguages.length > 0
-                    ? `${formData.selectedLanguages.length} ${t.languagesSelected}`
-                    : t.selectLanguagesPlaceholder}
-                </Text>
-                <Icon 
-                  name={showLanguageMenu ? "chevron-up" : "chevron-down"} 
-                  size={20} 
-                  color={COLORS.textSecondary} 
-                />
-              </TouchableOpacity>
-
-              {showLanguageMenu && (
-                <View style={styles.languageGridContainer}>
-                  {availableLanguages.map((language) => {
-                    const isSelected = formData.selectedLanguages.includes(language.name);
-                    return (
+                  <Text style={styles.label}>
+                    Number of Team Members <Text style={styles.required}>*</Text>
+                  </Text>
+                  <View style={styles.teamMemberInputContainer}>
+                    <TextInput
+                      style={styles.teamMemberInput}
+                      value={formData.teamSize}
+                      onChangeText={(value) => {
+                        const numValue = value.replace(/[^0-9]/g, '');
+                        updateField('teamSize', numValue);
+                      }}
+                      keyboardType="numeric"
+                      placeholderTextColor="#94a3b8"
+                      placeholder="Enter number of people in your team"
+                    />
+                    <View style={styles.teamMemberArrows}>
                       <TouchableOpacity
-                        key={language.code}
-                        style={[
-                          styles.languageCard,
-                          isSelected && styles.languageCardSelected
-                        ]}
-                        onPress={() => toggleLanguage(language.name)}
+                        style={styles.arrowButton}
+                        onPress={() => {
+                          const currentSize = parseInt(formData.teamSize) || 0;
+                          updateField('teamSize', String(currentSize + 1));
+                        }}
                         activeOpacity={0.7}
                       >
-                        {isSelected && (
-                          <View style={styles.languageCheckmark}>
-                            <Icon name="checkmark-circle" size={20} color={COLORS.secondary} />
-                          </View>
-                        )}
-                        <View style={styles.languageFlagContainer}>
-                          <Text style={styles.languageFlag}>{language.flag}</Text>
-                        </View>
-                        <Text style={styles.languageCardName}>{language.name}</Text>
-                        <Text style={styles.languageCardNative}>{language.nativeName}</Text>
+                        <Icon name="chevron-up" size={16} color={COLORS.textSecondary} />
                       </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              )}
-
-              {formData.selectedLanguages.length > 0 && (
-                <View style={styles.selectedLanguagesInfo}>
-                  <Icon name="checkmark-circle" size={18} color={COLORS.secondary} />
-                  <Text style={styles.selectedLanguagesInfoText}>
-                    {formData.selectedLanguages.length} {t.languagesSelected}
+                      <View style={styles.arrowDivider} />
+                      <TouchableOpacity
+                        style={styles.arrowButton}
+                        onPress={() => {
+                          const currentSize = parseInt(formData.teamSize) || 0;
+                          if (currentSize > 0) {
+                            updateField('teamSize', String(currentSize - 1));
+                          }
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Icon name="chevron-down" size={16} color={COLORS.textSecondary} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                  <Text style={styles.hint}>
+                    {formData.teamSize && parseInt(formData.teamSize) > 0
+                      ? `${formData.teamSize} member${parseInt(formData.teamSize) > 1 ? 's' : ''} selected for team registration`
+                      : 'Minimum 2 members required for team registration'}
                   </Text>
                 </View>
               )}
             </View>
 
-            {/* Documents Card */}
+            {/* 3️⃣ Documents Card */}
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>📄 {t.documents}</Text>
-              <Text style={styles.cardSubtitle}>{t.uploadDocuments}</Text>
+              <View style={styles.cardHeader}>
+                <View style={[styles.stepBadge, { backgroundColor: '#8b5cf6' }]}>
+                  <Icon name="document-text-outline" size={18} color={COLORS.white} />
+                </View>
+                <Text style={styles.cardTitle}>Documents</Text>
+              </View>
+              <Text style={styles.cardSubtitle}>Upload your identity documents</Text>
 
               {/* Profile Photo */}
               <View style={styles.documentItem}>
@@ -1549,7 +2082,9 @@ const ProfileDetailsScreen = ({ workerType, onComplete, onBack }) => {
                 <View style={styles.documentInfo}>
                   <Icon name="card" size={32} color={COLORS.primary} />
                   <View style={styles.documentTextContainer}>
-                    <Text style={styles.documentTitle}>{t.aadharCard}</Text>
+                    <Text style={styles.documentTitle}>
+                      {t.aadharCard} <Text style={styles.required}>*</Text>
+                    </Text>
                     <Text style={styles.documentSubtitle}>{t.uploadAadhar}</Text>
                   </View>
                 </View>
@@ -1568,7 +2103,9 @@ const ProfileDetailsScreen = ({ workerType, onComplete, onBack }) => {
                 <View style={styles.documentInfo}>
                   <Icon name="document-text" size={32} color={COLORS.primary} />
                   <View style={styles.documentTextContainer}>
-                    <Text style={styles.documentTitle}>{t.panCard}</Text>
+                    <Text style={styles.documentTitle}>
+                      {t.panCard} <Text style={styles.required}>*</Text>
+                    </Text>
                     <Text style={styles.documentSubtitle}>{t.uploadPan}</Text>
                   </View>
                 </View>
@@ -1581,12 +2118,90 @@ const ProfileDetailsScreen = ({ workerType, onComplete, onBack }) => {
                   <Text style={styles.uploadButtonText}>{t.upload}</Text>
                 </TouchableOpacity>
               </View>
+
+              {/* GST Certificate - For crew_Team, contractor, and service_provider */}
+              {(workerType === 'crew_Team' || workerType === 'contractor' || workerType === 'service_provider') && (
+                <>
+                  <View style={styles.documentItem}>
+                    <View style={styles.documentInfo}>
+                      <Icon name="document" size={32} color={COLORS.primary} />
+                      <View style={styles.documentTextContainer}>
+                        <Text style={styles.documentTitle}>GST Certificate (Optional)</Text>
+                        <Text style={styles.documentSubtitle}>Upload GST registration certificate</Text>
+                      </View>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.uploadButton}
+                      onPress={() => handleDocumentUpload('GST Certificate')}
+                      activeOpacity={0.7}
+                    >
+                      <Icon name="cloud-upload" size={20} color={COLORS.white} />
+                      <Text style={styles.uploadButtonText}>{t.upload}</Text>
+                    </TouchableOpacity>
+                  </View>
+                  
+                  {/* GST Number Input */}
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>GST Number (Optional)</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Enter GST number (e.g., 22AAAAA0000A1Z5)"
+                      value={formData.gstNumber}
+                      onChangeText={(value) => updateField('gstNumber', value.toUpperCase())}
+                      autoCapitalize="characters"
+                      placeholderTextColor="#94a3b8"
+                      maxLength={15}
+                    />
+                  </View>
+                </>
+              )}
+
+              {/* MSME Certificate - For crew_Team, contractor, and service_provider */}
+              {(workerType === 'crew_Team' || workerType === 'contractor' || workerType === 'service_provider') && (
+                <>
+                  <View style={styles.documentItem}>
+                    <View style={styles.documentInfo}>
+                      <Icon name="ribbon" size={32} color={COLORS.primary} />
+                      <View style={styles.documentTextContainer}>
+                        <Text style={styles.documentTitle}>MSME Certificate (Optional)</Text>
+                        <Text style={styles.documentSubtitle}>Upload MSME registration certificate</Text>
+                      </View>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.uploadButton}
+                      onPress={() => handleDocumentUpload('MSME Certificate')}
+                      activeOpacity={0.7}
+                    >
+                      <Icon name="cloud-upload" size={20} color={COLORS.white} />
+                      <Text style={styles.uploadButtonText}>{t.upload}</Text>
+                    </TouchableOpacity>
+                  </View>
+                  
+                  {/* MSME Number Input */}
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>MSME Number (Optional)</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Enter MSME registration number"
+                      value={formData.msmeNumber}
+                      onChangeText={(value) => updateField('msmeNumber', value.toUpperCase())}
+                      autoCapitalize="characters"
+                      placeholderTextColor="#94a3b8"
+                    />
+                  </View>
+                </>
+              )}
             </View>
 
-            {/* Payment Card */}
+            {/* 4️⃣ Payment Card */}
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>💳 {t.registrationPayment}</Text>
-              <Text style={styles.cardSubtitle}>{t.completePayment}</Text>
+              <View style={styles.cardHeader}>
+                <View style={[styles.stepBadge, { backgroundColor: '#10b981' }]}>
+                  <Icon name="card-outline" size={18} color={COLORS.white} />
+                </View>
+                <Text style={styles.cardTitle}>Registration Payment</Text>
+              </View>
+              <Text style={styles.cardSubtitle}>Complete payment to activate your profile</Text>
 
               {/* Payment Amount Info */}
               <View style={styles.paymentInfoBox}>
@@ -1594,7 +2209,7 @@ const ProfileDetailsScreen = ({ workerType, onComplete, onBack }) => {
                   <Icon name="cash" size={28} color={COLORS.secondary} />
                   <View style={styles.paymentInfoTextContainer}>
                     <Text style={styles.paymentInfoLabel}>{t.registrationFee}</Text>
-                    <Text style={styles.paymentInfoAmount}>₹499</Text>
+                    <Text style={styles.paymentInfoAmount}>₹1</Text>
                   </View>
                 </View>
                 <Text style={styles.paymentInfoNote}>
@@ -1602,84 +2217,134 @@ const ProfileDetailsScreen = ({ workerType, onComplete, onBack }) => {
                 </Text>
               </View>
 
-              {/* QR Code Section */}
-              <View style={styles.qrSection}>
-                <TouchableOpacity
-                  style={styles.qrToggleButton}
-                  onPress={() => setShowQRCode(!showQRCode)}
-                  activeOpacity={0.7}
-                >
-                  <Icon name="qr-code" size={24} color={COLORS.primary} />
-                  <Text style={styles.qrToggleText}>
-                    {showQRCode ? t.hideQR : t.showQR}
-                  </Text>
-                  <Icon 
-                    name={showQRCode ? "chevron-up" : "chevron-down"} 
-                    size={20} 
-                    color={COLORS.textSecondary} 
-                  />
-                </TouchableOpacity>
+              {/* QR Code Toggle Button */}
+              <TouchableOpacity
+                style={[
+                  styles.qrToggleButton,
+                  showQRCode && styles.qrToggleButtonActive
+                ]}
+                onPress={() => setShowQRCode(!showQRCode)}
+                activeOpacity={0.7}
+              >
+                <Icon 
+                  name={showQRCode ? "qr-code" : "qr-code-outline"} 
+                  size={24} 
+                  color={showQRCode ? COLORS.white : COLORS.primary} 
+                />
+                <Text style={[
+                  styles.qrToggleText,
+                  showQRCode && styles.qrToggleTextActive
+                ]}>
+                  {showQRCode ? t.hideQR : t.showQR}
+                </Text>
+                <Icon 
+                  name={showQRCode ? "chevron-up" : "chevron-down"} 
+                  size={20} 
+                  color={showQRCode ? COLORS.white : COLORS.textSecondary} 
+                />
+              </TouchableOpacity>
 
-                {showQRCode && (
-                  <View style={styles.qrCodeContainer}>
-                    <View style={styles.qrCodePlaceholder}>
-                      <Image source={{ uri: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASwAAAEsCAIAAAD2HxkiAAAG8ElEQVR4nO3dQW7jOBRA0Z7F7H8XWcAsBuhBd6ckihTFR+qeRQCJ7SaAD/5IpNx+fn7+A/jL/377BYCfI4QQEUIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIACGEgBBCQAghIIQQEEIICCEEhBACQggBIYSAEEJACCEghBAQQggIISCEEBBCCAghBIQQAkIIgf8BJy/2LqzrYEYAAAAASUVORK5CYII=' }} style={styles.qrCodeImage} resizeMode="contain" />
-                      <Text style={styles.qrCodeText}>{t.scanToPay}</Text>
-                    </View>
-                    <TouchableOpacity
-                      style={styles.scanButton}
-                      onPress={handleQRScan}
-                      activeOpacity={0.7}
-                    >
-                      <Icon name="scan" size={22} color={COLORS.black} />
-                      <Text style={styles.scanButtonText}>{t.scanQR}</Text>
-                    </TouchableOpacity>
-                    {formData.payment.qrScanned && (
-                      <View style={styles.successBadge}>
-                        <Icon name="checkmark-circle" size={20} color="#10b981" />
-                        <Text style={styles.successBadgeText}>{t.qrScanned}</Text>
-                      </View>
-                    )}
+              {/* QR Code Section - Only show when toggled */}
+              {showQRCode && (
+                <View style={styles.qrPaymentSection}>
+                  <View style={styles.qrPaymentHeader}>
+                    <Icon name="qr-code-outline" size={24} color={COLORS.primary} />
+                    <Text style={styles.qrPaymentTitle}>Scan QR Code to Pay</Text>
                   </View>
-                )}
-              </View>
 
-              {/* Transaction Number */}
+                  {/* QR Code Display */}
+                  <View style={styles.qrCodeDisplayBox}>
+                    <Image 
+                      source={{ 
+                        uri: `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent('upi://pay?pa=psipl1@kbl&pn=Parnets Software India Pvt Ltd&am=1&cu=INR&tn=Registration Fee')}`
+                      }} 
+                      style={styles.qrCodeDisplayImage} 
+                      resizeMode="contain" 
+                    />
+                  </View>
+
+                  {/* Company Details Box */}
+                  <View style={styles.companyDetailsBox}>
+                    <Text style={styles.companyName}>Parnets Software India Pvt Ltd</Text>
+                    <View style={styles.upiDetailRow}>
+                      <Text style={styles.upiDetailLabel}>UPI ID:</Text>
+                      <Text style={styles.upiDetailValue}>psipl1@kbl</Text>
+                    </View>
+                    <View style={styles.upiDetailRow}>
+                      <Text style={styles.upiDetailLabel}>Amount:</Text>
+                      <Text style={styles.upiDetailValue}>₹1</Text>
+                    </View>
+                  </View>
+
+                  {/* Payment Note */}
+                  <View style={styles.paymentNoteBox}>
+                    <Icon name="information-circle" size={20} color="#f59e0b" />
+                    <Text style={styles.paymentNoteText}>
+                      After payment, enter your transaction number below
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {/* Spacing after toggle button - always visible for consistent layout */}
+              <View style={{ height: 24 }} />
+
+              {/* Transaction Number Input */}
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>
-                  {t.transactionNumber} <Text style={styles.required}>{t.required}</Text>
+                  Transaction Number / UTR <Text style={styles.optionalText}>(Optional)</Text>
                 </Text>
                 <TextInput
                   style={styles.input}
-                  placeholder={t.enterTransaction}
+                  placeholder="ENTER TRANSACTION ID IF AVAILABLE (E.G., 123456789012)"
                   value={formData.payment.transactionNumber}
-                  onChangeText={(value) => 
-                    setFormData(prev => ({
-                      ...prev,
-                      payment: { ...prev.payment, transactionNumber: value }
-                    }))
-                  }
+                  onChangeText={handleTransactionNumberChange}
+                  keyboardType="default"
+                  maxLength={50}
                   placeholderTextColor="#94a3b8"
                 />
-                <Text style={styles.hint}>{t.transactionHint}</Text>
+                <View style={styles.transactionHints}>
+                
+                  <Text style={styles.transactionHint}>• If provided, must be at least 12 characters (letters and numbers only)</Text>
+                  <Text style={[styles.transactionHint, { color: '#3b82f6' }]}>
+                    • You can submit without transaction number - admin will verify from screenshot
+                  </Text>
+                </View>
               </View>
 
-              {/* Transaction Screenshot */}
-              <View style={styles.documentItem}>
-                <View style={styles.documentInfo}>
-                  <Icon name="image" size={32} color={COLORS.secondary} />
-                  <View style={styles.documentTextContainer}>
-                    <Text style={styles.documentTitle}>{t.paymentScreenshot}</Text>
-                    <Text style={styles.documentSubtitle}>{t.uploadProof}</Text>
-                  </View>
-                </View>
+              {/* Payment Screenshot Upload */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>
+                  Payment Screenshot <Text style={styles.required}>*</Text>
+                </Text>
+                
                 <TouchableOpacity
-                  style={[styles.uploadButton, { backgroundColor: COLORS.secondary }]}
+                  style={styles.screenshotUploadBox}
                   onPress={handleTransactionScreenshot}
                   activeOpacity={0.7}
                 >
-                  <Icon name="cloud-upload" size={20} color={COLORS.white} />
-                  <Text style={styles.uploadButtonText}>{t.upload}</Text>
+                  {formData.payment.transactionScreenshot ? (
+                    <View style={styles.screenshotPreview}>
+                      <Image 
+                        source={{ uri: formData.payment.transactionScreenshot.uri }} 
+                        style={styles.screenshotPreviewImage}
+                        resizeMode="cover"
+                      />
+                      <View style={styles.screenshotOverlay}>
+                        <Icon name="checkmark-circle" size={40} color="#10b981" />
+                        <Text style={styles.screenshotUploadedText}>Screenshot Uploaded</Text>
+                        <Text style={styles.screenshotChangeText}>Tap to change</Text>
+                      </View>
+                    </View>
+                  ) : (
+                    <View style={styles.screenshotUploadPlaceholder}>
+                      <Icon name="cloud-upload-outline" size={48} color="#94a3b8" />
+                      <Text style={styles.screenshotUploadTitle}>Upload Payment Screenshot</Text>
+                      <Text style={styles.screenshotUploadSubtitle}>
+                        Click to select image from your device
+                      </Text>
+                    </View>
+                  )}
                 </TouchableOpacity>
               </View>
             </View>
@@ -1824,6 +2489,15 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#86efac',
   },
+  typeDisplayIconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#e0f2fe',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 16,
+  },
   typeDisplayIcon: {
     fontSize: 40,
     marginRight: 16,
@@ -1853,11 +2527,34 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 8,
   },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  stepBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+  },
+  stepNumber: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: COLORS.white,
+  },
   cardTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     color: COLORS.textPrimary,
-    marginBottom: 20,
   },
   inputGroup: {
     marginBottom: 20,
@@ -1916,9 +2613,111 @@ const styles = StyleSheet.create({
     paddingTop: 12,
   },
   hint: {
-    fontSize: 5,
+    fontSize: 12,
     color: COLORS.textLight,
     marginTop: 6,
+  },
+  errorText: {
+    fontSize: 12,
+    color: '#ef4444',
+    marginTop: 6,
+  },
+  inputError: {
+    borderColor: '#ef4444',
+  },
+  teamMemberInputContainer: {
+    position: 'relative',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  teamMemberInput: {
+    flex: 1,
+    borderWidth: 2,
+    borderColor: COLORS.border,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    paddingRight: 50,
+    fontSize: 15,
+    color: COLORS.textPrimary,
+    backgroundColor: COLORS.white,
+  },
+  teamMemberArrows: {
+    position: 'absolute',
+    right: 2,
+    top: 2,
+    bottom: 2,
+    width: 40,
+    backgroundColor: COLORS.background,
+    borderTopRightRadius: 10,
+    borderBottomRightRadius: 10,
+    overflow: 'hidden',
+  },
+  arrowButton: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.background,
+  },
+  arrowDivider: {
+    height: 1,
+    backgroundColor: COLORS.border,
+  },
+  labelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  currentLocationButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+    elevation: 2,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+  },
+  currentLocationButtonText: {
+    color: COLORS.white,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  locationInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  locationInput: {
+    flex: 1,
+    borderWidth: 2,
+    borderColor: COLORS.border,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: COLORS.textPrimary,
+    backgroundColor: COLORS.white,
+    minHeight: 50,
+    maxHeight: 100,
+  },
+  gpsButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 12,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 3,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
   },
   availabilityInfo: {
     marginBottom: 16,
@@ -2019,8 +2818,7 @@ const styles = StyleSheet.create({
   cardSubtitle: {
     fontSize: 13,
     color: COLORS.textSecondary,
-    marginBottom: 16,
-    marginTop: -8,
+    marginBottom: 20,
   },
   languageToggleButton: {
     flexDirection: 'row',
@@ -2286,9 +3084,16 @@ const styles = StyleSheet.create({
     marginTop: 16,
     alignItems: 'center',
   },
+  scanToPayTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.primary,
+    marginBottom: 16,
+    textAlign: 'center',
+  },
   qrCodePlaceholder: {
-    width: 250,
-    height: 250,
+    width: 280,
+    height: 280,
     backgroundColor: COLORS.white,
     borderRadius: 16,
     alignItems: 'center',
@@ -2296,17 +3101,16 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: COLORS.primary,
     marginBottom: 16,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    padding: 15,
+    elevation: 6,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    padding: 16,
   },
   qrCodeImage: {
-    width: 220,
-    height: 220,
-    marginBottom: 10,
+    width: 240,
+    height: 240,
   },
   qrCodeImageContainer: {
     alignItems: 'center',
@@ -2381,25 +3185,127 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-  // ✅ Minimal QR Code Scanner - Only QR Image
+  // ✅ Improved QR Code Scanner Styles
   qrCodeBox: {
     backgroundColor: COLORS.white,
-    borderRadius: 16,
-    borderWidth: 2,
-    borderColor: COLORS.border,
+    borderRadius: 20,
+    borderWidth: 3,
+    borderColor: COLORS.primary,
     padding: 24,
     alignItems: 'center',
     justifyContent: 'center',
     marginVertical: 16,
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    elevation: 8,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+  },
+  googlePayHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 20,
+  },
+  googlePayTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#4285f4',
+    letterSpacing: 0.5,
+  },
+  qrCodeWrapper: {
+    backgroundColor: COLORS.white,
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#e5e7eb',
+    marginBottom: 20,
   },
   qrCodeImage: {
-    width: 250,
-    height: 250,
+    width: 240,
+    height: 240,
+  },
+  amountContainer: {
+    alignItems: 'center',
+    marginBottom: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    backgroundColor: '#f0fdf4',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#86efac',
+  },
+  amountLabel: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    marginBottom: 4,
+  },
+  amountValue: {
+    fontSize: 32,
+    fontWeight: '800',
+    color: '#059669',
+    letterSpacing: 1,
+  },
+  upiIdContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    backgroundColor: '#f3f4f6',
+    borderRadius: 8,
+    marginBottom: 16,
+  },
+  upiIdText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  scanInstructions: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    lineHeight: 18,
+    paddingHorizontal: 16,
+  },
+  googlePayButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    backgroundColor: '#4285f4',
+    paddingVertical: 16,
+    paddingHorizontal: 28,
+    borderRadius: 14,
+    marginTop: 16,
+    elevation: 6,
+    shadowColor: '#4285f4',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+  },
+  googlePayButtonText: {
+    color: COLORS.white,
+    fontSize: 17,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
+  alternativeAppsContainer: {
+    marginTop: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#fef3c7',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#fcd34d',
+  },
+  alternativeAppsText: {
+    fontSize: 12,
+    color: '#92400e',
+    textAlign: 'center',
+    fontWeight: '500',
+    lineHeight: 16,
   },
   googlePayUPIText: {
     fontSize: 13,
@@ -2490,8 +3396,368 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     lineHeight: 18,
   },
+  // ✅ Category Selector Styles
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+    gap: 10,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+  },
+  categoryToggleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 2,
+    borderColor: COLORS.border,
+    borderRadius: 12,
+    padding: 14,
+    backgroundColor: COLORS.white,
+  },
+  categoryToggleText: {
+    flex: 1,
+    fontSize: 15,
+    color: COLORS.textPrimary,
+    fontWeight: '500',
+  },
+  categoryGridContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginTop: 16,
+  },
+  noCategoriesText: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    padding: 20,
+    fontStyle: 'italic',
+  },
+  categoryCard: {
+    width: '47%',
+    backgroundColor: COLORS.white,
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 2,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    position: 'relative',
+    minHeight: 110,
+  },
+  categoryCardSelected: {
+    borderColor: COLORS.secondary,
+    backgroundColor: '#fef3e2',
+  },
+  categoryCheckmark: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    zIndex: 1,
+  },
+  categoryIcon: {
+    fontSize: 32,
+    marginBottom: 8,
+  },
+  categoryCardName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  categoryCardDescription: {
+    fontSize: 11,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    lineHeight: 14,
+  },
+  selectedCategoriesInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#d1fae5',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: '#86efac',
+  },
+  selectedCategoriesInfoText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#10b981',
+  },
+  // ✅ City Selector Styles
+  cityToggleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 2,
+    borderColor: COLORS.border,
+    borderRadius: 12,
+    padding: 14,
+    backgroundColor: COLORS.white,
+    minHeight: 50,
+  },
+  cityToggleText: {
+    flex: 1,
+    fontSize: 15,
+    color: COLORS.textPrimary,
+    fontWeight: '500',
+  },
+  cityGridContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginTop: 16,
+  },
+  citySearchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    marginBottom: 12,
+    width: '100%',
+  },
+  citySearchInput: {
+    flex: 1,
+    fontSize: 15,
+    color: COLORS.textPrimary,
+    padding: 0,
+  },
+  cityCard: {
+    width: '47%',
+    backgroundColor: COLORS.white,
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 2,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    position: 'relative',
+    minHeight: 90,
+  },
+  cityCardSelected: {
+    borderColor: COLORS.secondary,
+    backgroundColor: '#fef3e2',
+  },
+  cityCheckmark: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    zIndex: 1,
+  },
+  cityCardName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  cityCardNameSelected: {
+    color: COLORS.secondary,
+  },
+  selectedCitiesInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#d1fae5',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: '#86efac',
+  },
+  selectedCitiesInfoText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#10b981',
+  },
+  // New Payment Section Styles
+  registrationFeeBox: {
+    backgroundColor: '#fef3c7',
+    borderRadius: 12,
+    padding: 20,
+    alignItems: 'center',
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#fde68a',
+  },
+  registrationFeeLabel: {
+    fontSize: 14,
+    color: '#78716c',
+    fontWeight: '500',
+    marginBottom: 8,
+  },
+  registrationFeeAmount: {
+    fontSize: 48,
+    fontWeight: '700',
+    color: '#f59e0b',
+    marginBottom: 4,
+  },
+  registrationFeeNote: {
+    fontSize: 13,
+    color: '#78716c',
+    fontWeight: '400',
+  },
+  qrPaymentSection: {
+    backgroundColor: COLORS.white,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  qrPaymentHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 16,
+  },
+  qrPaymentTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+  },
+  qrCodeDisplayBox: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  qrCodeDisplayImage: {
+    width: 250,
+    height: 250,
+    borderRadius: 8,
+    backgroundColor: COLORS.white,
+  },
+  companyDetailsBox: {
+    backgroundColor: '#f1f5f9',
+    borderRadius: 10,
+    padding: 16,
+    marginBottom: 16,
+  },
+  companyName: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.textPrimary,
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  upiDetailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
+  upiDetailLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: COLORS.textSecondary,
+  },
+  upiDetailValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+  },
+  paymentNoteBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    backgroundColor: '#fef3c7',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#fde68a',
+  },
+  paymentNoteText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#78716c',
+    fontWeight: '500',
+    lineHeight: 18,
+  },
+  optionalText: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    fontWeight: '400',
+  },
+  transactionHints: {
+    marginTop: 4,
+    gap: 8,
+  },
+  transactionHint: {
+    fontSize: 12,
+    color: COLORS.textSecondary,
+    lineHeight: 16,
+  },
+  screenshotUploadBox: {
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: '#cbd5e1',
+    borderRadius: 12,
+    backgroundColor: '#f8fafc',
+    minHeight: 200,
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  screenshotUploadPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 30,
+  },
+  screenshotUploadTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.textPrimary,
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  screenshotUploadSubtitle: {
+    fontSize: 13,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+  },
+  screenshotPreview: {
+    width: '100%',
+    height: 250,
+    position: 'relative',
+  },
+  screenshotPreviewImage: {
+    width: '100%',
+    height: '100%',
+  },
+  screenshotOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  screenshotUploadedText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.white,
+    marginTop: 8,
+  },
+  screenshotChangeText: {
+    fontSize: 13,
+    color: '#cbd5e1',
+    marginTop: 4,
+  },
 });
 
 export default ProfileDetailsScreen;
-
-

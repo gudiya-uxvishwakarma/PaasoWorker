@@ -44,6 +44,29 @@ const VerificationScreen = ({ onBack, userData, onComplete }) => {
       
       console.log('🛡️ Loading verification data...');
       
+      // Get worker ID
+      const workerId = userData?._id || userData?.id;
+      
+      if (workerId) {
+        // Fetch verification status from backend
+        console.log('📥 Fetching verification status from backend...');
+        const verificationResponse = await api.getVerificationStatus(workerId);
+        
+        if (verificationResponse.success && verificationResponse.status) {
+          const { documents: backendDocs } = verificationResponse.status;
+          
+          // Update documents state with backend data
+          setDocuments({
+            aadhaar: backendDocs?.aadhaar || userData?.aadhaarDoc || null,
+            drivingLicense: backendDocs?.drivingLicense || userData?.drivingLicense || null,
+            gst: backendDocs?.gst || userData?.gstCertificate || null,
+          });
+          
+          console.log('✅ Verification status loaded from backend');
+          console.log('📊 Progress:', verificationResponse.status.progress + '%');
+        }
+      }
+      
       // Calculate trust score based on user data
       calculateTrustScore();
       
@@ -227,18 +250,32 @@ const VerificationScreen = ({ onBack, userData, onComplete }) => {
                         setProcessing(true);
                         
                         // Simulate upload to backend
-                        const response = await api.uploadDocument(docId, {
+                        const uploadResponse = await api.uploadDocument(docId, {
                           uri: 'demo_document_uri',
                           type: 'image/jpeg',
                           name: `${docId}_${Date.now()}.jpg`
                         });
                         
-                        if (response.success) {
+                        if (uploadResponse.success) {
+                          // Update local state
                           setDocuments(prev => ({ ...prev, [docId]: true }));
+                          
+                          // Submit to backend
+                          const workerId = userData?._id || userData?.id;
+                          if (workerId) {
+                            const submitData = {};
+                            if (docId === 'aadhaar') submitData.aadhaarDoc = uploadResponse.documentUrl;
+                            if (docId === 'drivingLicense') submitData.drivingLicense = uploadResponse.documentUrl;
+                            if (docId === 'gst') submitData.gstCertificate = uploadResponse.documentUrl;
+                            
+                            await api.submitKYCDocuments(workerId, submitData);
+                          }
+                          
                           Alert.alert('Success', 'Document uploaded successfully!');
                           loadVerificationData(); // Refresh data
                         }
                       } catch (error) {
+                        console.error('❌ Upload error:', error);
                         Alert.alert('Error', 'Failed to upload document. Please try again.');
                       } finally {
                         setProcessing(false);
@@ -269,18 +306,31 @@ const VerificationScreen = ({ onBack, userData, onComplete }) => {
                       try {
                         setProcessing(true);
                         
-                        const response = await api.uploadDocument(docId, {
+                        const uploadResponse = await api.uploadDocument(docId, {
                           uri: 'demo_document_uri',
                           type: 'image/jpeg',
                           name: `${docId}_${Date.now()}.jpg`
                         });
                         
-                        if (response.success) {
+                        if (uploadResponse.success) {
                           setDocuments(prev => ({ ...prev, [docId]: true }));
+                          
+                          // Submit to backend
+                          const workerId = userData?._id || userData?.id;
+                          if (workerId) {
+                            const submitData = {};
+                            if (docId === 'aadhaar') submitData.aadhaarDoc = uploadResponse.documentUrl;
+                            if (docId === 'drivingLicense') submitData.drivingLicense = uploadResponse.documentUrl;
+                            if (docId === 'gst') submitData.gstCertificate = uploadResponse.documentUrl;
+                            
+                            await api.submitKYCDocuments(workerId, submitData);
+                          }
+                          
                           Alert.alert('Success', 'Document uploaded successfully!');
                           loadVerificationData();
                         }
                       } catch (error) {
+                        console.error('❌ Upload error:', error);
                         Alert.alert('Error', 'Failed to upload document. Please try again.');
                       } finally {
                         setProcessing(false);

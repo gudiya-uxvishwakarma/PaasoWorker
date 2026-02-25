@@ -3,19 +3,21 @@
  * @format
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { StatusBar, useColorScheme, Platform, PermissionsAndroid, Alert } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import AppNavigator from './src/navigation/AppNavigator';
 import SplashScreen from './src/screens/SplashScreen';
 import { LanguageProvider } from './src/context/LanguageContext';
-import { initializeFCM, setupNotificationHandlers } from './src/services/fcm.service';
+import { initializeFCM, setupNotificationHandlers, registerFCMToken } from './src/services/fcm.service';
 import { runFirebaseDiagnostics } from './src/utils/firebaseDiagnostics';
 
 
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
   const [showSplash, setShowSplash] = useState(true);
+  const navigationRef = useRef(null);
 
   useEffect(() => {
     // Initialize FCM on app start with delay to ensure Firebase is ready
@@ -43,11 +45,30 @@ function App() {
         if (token) {
           console.log('✅ FCM Token obtained successfully');
           console.log('📱 Device registered for push notifications');
+          console.log('🔔 Background/Closed app notifications: ENABLED');
           
-          // Setup notification handlers
-          setupNotificationHandlers();
+          // Setup notification handlers for foreground, background, and terminated states
+          setupNotificationHandlers(navigationRef);
           console.log('✅ FCM setup completed successfully');
-          console.log('📲 App is ready to receive notifications');
+          console.log('📲 App is ready to receive notifications in all states:');
+          console.log('   ✓ Foreground (app open)');
+          console.log('   ✓ Background (app minimized)');
+          console.log('   ✓ Terminated (app closed)');
+          
+          // Re-register token if user is logged in
+          // This ensures token is always up-to-date
+          try {
+            const userId = await AsyncStorage.getItem('@user_id');
+            if (userId) {
+              console.log('👤 User logged in, re-registering FCM token...');
+              const registered = await registerFCMToken(userId, token);
+              if (registered) {
+                console.log('✅ FCM token re-registered for logged-in user');
+              }
+            }
+          } catch (reregError) {
+            console.warn('⚠️ Token re-registration failed:', reregError.message);
+          }
           
           // Show success message in development (only if successful)
           if (__DEV__) {
@@ -122,7 +143,7 @@ function App() {
     <LanguageProvider>
       <SafeAreaProvider>
         <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-        <AppNavigator />
+        <AppNavigator ref={navigationRef} />
       </SafeAreaProvider>
     </LanguageProvider>
   );
