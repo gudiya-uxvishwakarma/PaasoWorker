@@ -1,0 +1,135 @@
+========================================
+REACT NATIVE APP - QUICK START
+========================================
+
+✅ CONFIGURATION READY:
+- New Architecture: DISABLED
+- C++ Build: DISABLED  
+- CMake: DISABLED
+- Old Architecture: ENABLED (Stable)
+- Hermes: ENABLED
+
+========================================
+STEP 1: COMPLETE FIX (First Time Only)
+========================================
+
+cd PaasoWork
+COMPLETE_BUILD_FIX.bat
+
+Time: 5-10 minutes
+This cleans everything and reinstalls dependencies.
+
+========================================
+STEP 2: TEST SETUP (Optional)
+========================================
+
+TEST_SETUP.bat
+
+This checks if everything is configured correctly.
+
+========================================
+STEP 3: RUN APP
+========================================
+
+Option A (Recommended):
+  RUN_APP.bat
+
+Option B (Manual):
+  npx react-native run-android
+
+Time: 2-3 minutes (first run)
+
+========================================
+STEP 4: BUILD APK (For Distribution)
+========================================
+
+BUILD_APK.bat
+
+Select:
+  1 = Debug APK (testing)
+  2 = Release APK (production)
+
+APK Location:
+  android\app\build\outputs\apk\release\app-release.apk
+
+========================================
+TROUBLESHOOTING
+========================================
+
+Problem: Build fails
+Solution: COMPLETE_BUILD_FIX.bat
+
+Problem: No device found
+Solution: adb devices (connect device/emulator)
+
+Problem: Metro not starting
+Solution: taskkill /F /IM node.exe
+
+Problem: Port 8081 in use
+Solution: npx react-native start --port 8082
+
+========================================
+USEFUL COMMANDS
+========================================
+
+# Check devices
+adb devices
+
+# Clear app data
+adb shell pm clear com.paasowork
+
+# Uninstall app
+adb uninstall com.paasowork
+
+# View logs
+adb logcat | findstr ReactNative
+
+# Kill Metro
+taskkill /F /IM node.exe
+
+# Start Metro with cache reset
+npx react-native start --reset-cache
+
+========================================
+FILES REFERENCE
+========================================
+
+RUN_APP.bat              - Run app on device
+TEST_SETUP.bat           - Test configuration
+COMPLETE_BUILD_FIX.bat   - Complete cleanup
+BUILD_APK.bat            - Build release APK
+FINAL_SETUP_GUIDE.md     - Complete documentation
+BUILD_KAISE_KARE.md      - Hindi guide
+
+========================================
+CONFIGURATION FILES
+========================================
+
+android/gradle.properties - Build settings
+android/app/build.gradle  - App configuration
+
+Key Settings:
+  newArchEnabled=false
+  android.enableCmake=false
+  android.enableNativeBuild=false
+  hermesEnabled=true
+
+========================================
+SUPPORT
+========================================
+
+If you face any issues:
+1. Run: COMPLETE_BUILD_FIX.bat
+2. Run: TEST_SETUP.bat
+3. Check error message
+4. See FINAL_SETUP_GUIDE.md
+
+========================================
+READY TO GO! 🚀
+========================================
+
+Just run: RUN_APP.bat
+
+Or: npx react-native run-android
+
+========================================

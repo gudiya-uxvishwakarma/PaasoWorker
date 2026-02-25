@@ -1,0 +1,77 @@
+========================================
+PHONE SETUP CHECKLIST
+========================================
+
+Before running app, verify these:
+
+PHONE SETTINGS:
+[ ] Developer Options enabled
+    Settings → About Phone → Tap Build Number 7 times
+
+[ ] USB Debugging enabled
+    Settings → Developer Options → USB Debugging ON
+
+[ ] Phone connected via USB cable
+
+[ ] USB debugging popup allowed
+    "Allow USB debugging?" → Always allow → OK
+
+COMPUTER VERIFICATION:
+[ ] Open Command Prompt and run:
+    adb devices
+
+[ ] Should show:
+    List of devices attached
+    ABC123XYZ    device
+
+[ ] If shows "unauthorized":
+    - Check phone screen for popup
+    - Allow USB debugging
+    - Run: adb devices again
+
+READY TO RUN:
+If all checked, run:
+    cd PaasoWork
+    FIX_AND_RUN.bat
+
+========================================
+QUICK COMMANDS
+========================================
+
+Check device:
+    adb devices
+
+Restart ADB:
+    adb kill-server
+    adb start-server
+    adb devices
+
+Uninstall app:
+    adb uninstall com.paasowork
+
+View logs:
+    adb logcat | findstr ReactNative
+
+========================================
+TROUBLESHOOTING
+========================================
+
+No device shown?
+→ Check USB cable
+→ Enable USB debugging
+→ Allow popup on phone
+→ Try different USB port
+
+Device shows "unauthorized"?
+→ Check phone screen
+→ Allow USB debugging popup
+→ Check "Always allow"
+
+Build fails?
+→ Run: FIX_AND_RUN.bat
+
+Metro not starting?
+→ taskkill /F /IM node.exe
+→ npx react-native start
+
+========================================

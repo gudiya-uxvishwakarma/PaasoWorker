@@ -440,12 +440,25 @@ const OTPVerifyScreen = ({ route, navigation }) => {
           <View style={styles.otpSection}>
             <Text style={styles.otpLabel}>Enter Code</Text>
 
-            {/* Test Code Card - Above OTP boxes */}
+            {/* Test Code Card - Click to auto-fill */}
             {generatedOTP && (
-              <View style={styles.testCodeCard}>
+              <TouchableOpacity 
+                style={styles.testCodeCard}
+                onPress={() => {
+                  // Fill OTP boxes with generated OTP
+                  const otpArray = generatedOTP.split('');
+                  setOtp(otpArray);
+                  // Auto-verify after filling
+                  setTimeout(() => {
+                    verifyOTP(generatedOTP);
+                  }, 300);
+                }}
+                activeOpacity={0.7}
+              >
                 <Icon name="code-slash" size={20} color={COLORS.accent} />
                 <Text style={styles.testCodeText}>{generatedOTP}</Text>
-              </View>
+                <Icon name="arrow-down-circle" size={20} color={COLORS.accent} />
+              </TouchableOpacity>
             )}
 
             <Animated.View 
