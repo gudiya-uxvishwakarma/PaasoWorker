@@ -1,71 +1,51 @@
 @echo off
 echo ========================================
-echo Building Release APK for PaasoWork
+echo Building Release APK
 echo ========================================
 echo.
 
-cd /d "%~dp0"
+cd android
 
-echo [1/5] Cleaning previous builds...
-call gradlew clean
+echo [1/2] Building release APK...
+call gradlew assembleRelease --no-daemon --warning-mode all
+
 if errorlevel 1 (
-    echo ERROR: Clean failed!
-    pause
-    exit /b 1
-)
-echo.
-
-echo [2/5] Checking google-services.json...
-if not exist "app\google-services.json" (
-    echo ERROR: google-services.json not found!
-    echo Please add it to android/app/ folder
-    pause
-    exit /b 1
-)
-echo google-services.json found!
-echo.
-
-echo [3/5] Building Release APK...
-echo This may take 5-10 minutes...
-call gradlew assembleRelease
-if errorlevel 1 (
+    echo.
+    echo ========================================
     echo ERROR: Build failed!
+    echo ========================================
     echo.
     echo Common fixes:
-    echo 1. Run: gradlew clean
-    echo 2. Delete android/.gradle folder
-    echo 3. Check proguard-rules.pro
+    echo 1. Run fix-build-complete.bat first
+    echo 2. Check Java version: java -version
+    echo 3. Check Android SDK installation
+    echo 4. Check gradle.properties settings
+    echo.
+    cd ..
     pause
     exit /b 1
 )
-echo.
 
-echo [4/5] Locating APK...
-set APK_PATH=app\build\outputs\apk\release\app-release.apk
-if exist "%APK_PATH%" (
+echo.
+echo [2/2] Checking APK...
+if exist "app\build\outputs\apk\release\app-release.apk" (
+    echo.
+    echo ========================================
     echo SUCCESS! APK built successfully!
+    echo ========================================
     echo.
-    echo APK Location: %APK_PATH%
+    echo APK Location:
+    echo %CD%\app\build\outputs\apk\release\app-release.apk
     echo.
-    
-    echo [5/5] Copying APK to root folder...
-    copy "%APK_PATH%" "..\..\PaasoWork-release.apk"
-    if errorlevel 1 (
-        echo Warning: Could not copy APK to root
-    ) else (
-        echo APK copied to: PaasoWork-release.apk
-    )
+    echo APK Size:
+    dir "app\build\outputs\apk\release\app-release.apk" | find "app-release.apk"
+    echo.
+    echo To install on device:
+    echo adb install app\build\outputs\apk\release\app-release.apk
+    echo.
 ) else (
     echo ERROR: APK not found at expected location!
-    echo Expected: %APK_PATH%
 )
 
-echo.
-echo ========================================
-echo Build Complete!
-echo ========================================
-echo.
-echo To install on device:
-echo adb install -r app\build\outputs\apk\release\app-release.apk
-echo.
+cd ..
 pause

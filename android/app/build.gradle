@@ -53,6 +53,10 @@ react {
 
     /* Autolinking */
     autolinkLibrariesWithApp()
+    
+    /* Disable CMake/C++ builds - using Old Architecture without native compilation */
+    // This prevents C++20 std::format errors
+    // All native modules will use precompiled binaries from node_modules
 }
 
 /**
@@ -79,7 +83,7 @@ apply from: file("../../node_modules/react-native-vector-icons/fonts.gradle")
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
 android {
-    // ndkVersion rootProject.ext.ndkVersion
+    ndkVersion rootProject.ext.ndkVersion
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
@@ -90,6 +94,11 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0"
+        
+        // Specify ABIs for release build
+        ndk {
+            abiFilters "armeabi-v7a", "arm64-v8a"
+        }
     }
     
     buildFeatures {
