@@ -69,40 +69,69 @@ export const getFCMToken = async (retries = 3, delay = 2000) => {
     try {
       console.log(`🔑 Attempting to get FCM token (attempt ${attempt}/${retries})...`);
       
-      // Register device for remote messages if not already registered
-      if (!messaging().isDeviceRegisteredForRemoteMessages) {
-        await messaging().registerDeviceForRemoteMessages();
-        console.log('✅ Device registered for remote messages');
+      // For Android, register device for remote messages
+      if (Platform.OS === 'android') {
+        try {
+          const isRegistered = messaging().isDeviceRegisteredForRemoteMessages;
+          console.log('📱 Device registration status:', isRegistered);
+          
+          if (!isRegistered) {
+            console.log('📱 Registering device for remote messages...');
+            await messaging().registerDeviceForRemoteMessages();
+            console.log('✅ Device registered for remote messages');
+          }
+        } catch (regError) {
+          console.warn('⚠️ Device registration check failed, continuing...', regError.message);
+          // Continue anyway, token might still work
+        }
       }
       
       // Get the token
+      console.log('🔑 Requesting FCM token from Firebase...');
       const token = await messaging().getToken();
       
-      if (token) {
+      if (token && token.length > 0) {
         console.log('✅ FCM Token obtained successfully');
+        console.log('Token length:', token.length);
         console.log('Token preview:', token.substring(0, 30) + '...');
         
         // Save token locally
         await AsyncStorage.setItem(FCM_TOKEN_KEY, token);
+        console.log('✅ Token saved to AsyncStorage');
         
         return token;
       } else {
-        console.warn('⚠️ Token is empty, retrying...');
+        console.warn('⚠️ Token is empty or invalid, retrying...');
+        if (attempt < retries) {
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
       }
     } catch (error) {
       console.error(`❌ Attempt ${attempt} failed:`, error.message);
+      console.error('Error code:', error.code);
+      console.error('Error details:', error);
+      
+      // Check for specific error codes
+      if (error.code === 'messaging/unknown') {
+        console.error('💡 Firebase Messaging not initialized properly');
+        console.error('💡 Check google-services.json and Firebase setup');
+      } else if (error.code === 'messaging/registration-token-not-registered') {
+        console.error('💡 Device not registered with FCM');
+      }
       
       if (attempt < retries) {
         console.log(`⏳ Waiting ${delay}ms before retry...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       } else {
         console.error('❌ All retry attempts exhausted');
-        throw error;
+        // Don't throw error, return null to allow app to continue
+        return null;
       }
     }
   }
   
-  throw new Error('Failed to get FCM token after all retries');
+  console.error('❌ Failed to get FCM token after all retries');
+  return null; // Return null instead of throwing
 };
 
 /**
@@ -121,29 +150,45 @@ export const registerFCMToken = async (userId, token = null) => {
     }
     
     if (!fcmToken) {
-      console.error('❌ No FCM token available');
+      console.error('❌ No FCM token available - skipping registration');
+      console.log('💡 App will work without notifications');
       return false;
     }
     
     console.log('   Token preview:', fcmToken.substring(0, 30) + '...');
+    console.log('   Token length:', fcmToken.length);
+    
+    const requestBody = {
+      userId,
+      fcmToken,
+      platform: Platform.OS,
+      deviceInfo: {
+        os: Platform.OS,
+        version: Platform.Version
+      }
+    };
+    
+    console.log('📤 Sending request to backend...');
+    console.log('   URL:', `${API_BASE_URL}/api/workers/fcm-token`);
     
     const response = await fetch(`${API_BASE_URL}/api/workers/fcm-token`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        userId,
-        fcmToken,
-        platform: Platform.OS,
-      }),
+      body: JSON.stringify(requestBody),
     });
 
+    console.log('📥 Response status:', response.status);
+    
     const data = await response.json();
+    console.log('📥 Response data:', data);
     
     if (!response.ok) {
       console.error('❌ Backend returned error:', data.message);
-      throw new Error(data.message || 'Failed to register FCM token');
+      console.error('   Status:', response.status);
+      console.error('   Response:', JSON.stringify(data, null, 2));
+      return false;
     }
 
     console.log('✅ FCM token registered with backend successfully');
@@ -154,9 +199,12 @@ export const registerFCMToken = async (userId, token = null) => {
     await AsyncStorage.setItem('@fcm_user_id', userId);
     await AsyncStorage.setItem('@fcm_token_last_sent', new Date().toISOString());
     
+    console.log('✅ Registration status saved locally');
+    
     return true;
   } catch (error) {
     console.error('❌ Failed to register FCM token:', error.message);
+    console.error('   Error details:', error);
     return false;
   }
 };
@@ -169,9 +217,12 @@ export const initializeFCM = async () => {
     console.log('🚀 Starting FCM initialization...');
     
     // Step 1: Check Firebase initialization
+    console.log('📱 Checking Firebase initialization...');
     const isFirebaseReady = await checkFirebaseInitialization();
     if (!isFirebaseReady) {
-      throw new Error('Firebase is not properly initialized');
+      console.error('❌ Firebase is not properly initialized');
+      console.log('💡 Check google-services.json file');
+      return null;
     }
     
     // Step 2: Request notification permission
@@ -179,14 +230,25 @@ export const initializeFCM = async () => {
     const hasPermission = await requestNotificationPermission();
     if (!hasPermission) {
       console.log('⚠️ Notification permission denied by user');
+      console.log('💡 User can enable it later from settings');
       return null;
     }
+    console.log('✅ Notification permission granted');
     
     // Step 3: Get FCM token with retry logic
     console.log('🔑 Getting FCM token...');
     const token = await getFCMToken();
     
+    if (!token) {
+      console.error('❌ Failed to get FCM token');
+      console.log('💡 App will continue without push notifications');
+      return null;
+    }
+    
+    console.log('✅ FCM token obtained successfully');
+    
     // Step 4: Setup token refresh listener
+    console.log('🔄 Setting up token refresh listener...');
     messaging().onTokenRefresh(async newToken => {
       console.log('🔄 FCM Token refreshed');
       console.log('New token preview:', newToken.substring(0, 30) + '...');
@@ -195,6 +257,7 @@ export const initializeFCM = async () => {
       // Update token on backend if user is logged in
       const userId = await AsyncStorage.getItem('@user_id');
       if (userId) {
+        console.log('📤 Updating refreshed token on backend...');
         await registerFCMToken(userId, newToken);
       }
     });
@@ -214,9 +277,12 @@ export const initializeFCM = async () => {
       console.error('💡 Too many apps registered, try clearing app data');
     } else if (error.message.includes('INVALID_SENDER')) {
       console.error('💡 Check google-services.json configuration');
+    } else if (error.message.includes('MISSING_INSTANCEID_SERVICE')) {
+      console.error('💡 Firebase Messaging not properly configured');
     }
     
-    throw error;
+    console.log('💡 App will continue without push notifications');
+    return null;
   }
 };
 

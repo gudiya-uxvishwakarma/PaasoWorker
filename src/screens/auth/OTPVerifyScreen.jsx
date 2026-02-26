@@ -10,7 +10,8 @@ import {
   ActivityIndicator,
   Animated,
   ScrollView,
-  Platform
+  Platform,
+  Clipboard
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import COLORS from '../../constants/colors';
@@ -77,13 +78,46 @@ const OTPVerifyScreen = ({ route, navigation }) => {
       })
     ).start();
 
-    // Focus first input on mount
-    setTimeout(() => {
-      if (inputRefs.current[0]) {
-        inputRefs.current[0].focus();
+    // Auto-fill generated OTP if available
+    if (generatedOTP && generatedOTP.length === 6) {
+      setTimeout(() => {
+        const otpDigits = generatedOTP.split('');
+        setOtp(otpDigits);
+        console.log('✅ Auto-filled OTP in boxes:', generatedOTP);
+      }, 800);
+    } else {
+      // Focus first input on mount if no OTP
+      setTimeout(() => {
+        if (inputRefs.current[0]) {
+          inputRefs.current[0].focus();
+        }
+      }, 400);
+    }
+
+    // Auto-fill from clipboard if OTP detected
+    if (!generatedOTP) {
+      checkClipboardForOTP();
+    }
+  }, [generatedOTP]);
+
+  // Check clipboard for OTP
+  const checkClipboardForOTP = async () => {
+    try {
+      const clipboardContent = await Clipboard.getString();
+      // Check if clipboard contains 6 digit OTP
+      const otpMatch = clipboardContent.match(/\b\d{6}\b/);
+      if (otpMatch) {
+        const otpDigits = otpMatch[0].split('');
+        setOtp(otpDigits);
+        // Auto-verify
+        setTimeout(() => {
+          verifyOTP(otpMatch[0]);
+        }, 500);
       }
-    }, 400);
-  }, []);
+    } catch (error) {
+      console.log('Clipboard check failed:', error);
+    }
+  };
 
   const spin = rotateAnim.interpolate({
     inputRange: [0, 1],
@@ -108,6 +142,31 @@ const OTPVerifyScreen = ({ route, navigation }) => {
   }, [resendTimer]);
 
   const handleOTPChange = (value, index) => {
+    // Handle paste - distribute digits across boxes
+    if (value.length > 1) {
+      const digits = value.slice(0, 6).split('');
+      const newOTP = [...otp];
+      
+      digits.forEach((digit, i) => {
+        if (index + i < 6 && /^\d$/.test(digit)) {
+          newOTP[index + i] = digit;
+        }
+      });
+      
+      setOtp(newOTP);
+      
+      // Focus last filled box or next empty box
+      const lastFilledIndex = Math.min(index + digits.length - 1, 5);
+      inputRefs.current[lastFilledIndex]?.focus();
+      
+      // Auto-verify if all 6 digits filled
+      const fullOTP = newOTP.join('');
+      if (fullOTP.length === 6) {
+        setTimeout(() => verifyOTP(fullOTP), 300);
+      }
+      return;
+    }
+
     // Only allow numbers
     if (value && !/^\d+$/.test(value)) {
       return;
@@ -440,26 +499,7 @@ const OTPVerifyScreen = ({ route, navigation }) => {
           <View style={styles.otpSection}>
             <Text style={styles.otpLabel}>Enter Code</Text>
 
-            {/* Test Code Card - Click to auto-fill */}
-            {generatedOTP && (
-              <TouchableOpacity 
-                style={styles.testCodeCard}
-                onPress={() => {
-                  // Fill OTP boxes with generated OTP
-                  const otpArray = generatedOTP.split('');
-                  setOtp(otpArray);
-                  // Auto-verify after filling
-                  setTimeout(() => {
-                    verifyOTP(generatedOTP);
-                  }, 300);
-                }}
-                activeOpacity={0.7}
-              >
-                <Icon name="code-slash" size={20} color={COLORS.accent} />
-                <Text style={styles.testCodeText}>{generatedOTP}</Text>
-                <Icon name="arrow-down-circle" size={20} color={COLORS.accent} />
-              </TouchableOpacity>
-            )}
+           
 
             <Animated.View 
               style={[
@@ -485,11 +525,13 @@ const OTPVerifyScreen = ({ route, navigation }) => {
                       keyboardType="number-pad"
                       maxLength={1}
                       selectTextOnFocus
+                      autoComplete="sms-otp"
+                      textContentType="oneTimeCode"
                     />
                   </View>
                   {digit && (
                     <View style={styles.otpInputCheck}>
-                      <Icon name="checkmark" size={10} color={COLORS.white} />
+                      <Icon name="checkmark" size={12} color={COLORS.white} />
                     </View>
                   )}
                 </View>
@@ -660,7 +702,7 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
     borderTopColor: COLORS.primary,
     borderRightColor: COLORS.accent,
-    borderBottomColor: COLORS.secondary,
+    borderBottomColor: '#26a6da',
     borderLeftColor: COLORS.accent,
   },
   iconPulse: {
@@ -775,36 +817,75 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     letterSpacing: 0.5,
   },
+  otpHintCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#26a6da15',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#26a6da30',
+  },
+  otpHintText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#26a6da',
+  },
   otpContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 12,
+    alignItems: 'center',
+    gap: 8,
     width: '100%',
+    paddingHorizontal: 4,
   },
   otpInputWrapper: {
     position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   otpInputBorder: {
-    padding: 2,
-    borderRadius: 16,
-    backgroundColor: COLORS.border,
+    padding: 3,
+    borderRadius: 18,
+    backgroundColor: '#E8E8E8',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 5,
   },
   otpInputBorderFilled: {
-    backgroundColor: COLORS.secondary,
+    backgroundColor: '#26a6da',
+    elevation: 6,
+    shadowColor: '#26a6da',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
   },
   otpInput: {
-    width: 46,
-    height: 54,
-    borderRadius: 14,
-    fontSize: 26,
-    fontWeight: 'bold',
+    width: 50,
+    height: 60,
+    borderRadius: 16,
+    fontSize: 30,
+    fontWeight: '900',
     textAlign: 'center',
-    color: COLORS.textPrimary,
+    textAlignVertical: 'center',
+    color: '#333333',
     backgroundColor: COLORS.white,
+    padding: 0,
+    paddingTop: Platform.OS === 'android' ? 2 : 0,
+    includeFontPadding: false,
+    lineHeight: 60,
   },
   otpInputFilled: {
-    color: COLORS.textPrimary,
+    color: COLORS.primary,
     backgroundColor: COLORS.white,
+    fontSize: 34,
+    fontWeight: '900',
   },
   otpInputCheck: {
     position: 'absolute',
@@ -813,11 +894,11 @@ const styles = StyleSheet.create({
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: COLORS.secondary,
+    backgroundColor: '#26a6da',
     alignItems: 'center',
     justifyContent: 'center',
     elevation: 4,
-    shadowColor: COLORS.secondary,
+    shadowColor: '#26a6da',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.4,
     shadowRadius: 4,
